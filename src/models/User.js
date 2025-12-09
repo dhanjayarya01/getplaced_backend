@@ -2,10 +2,10 @@ import mongoose from 'mongoose'
 
 const userSchema = new mongoose.Schema(
     {
-        // Authentication fields
+        // Google OAuth Authentication (ONLY)
         googleId: {
             type: String,
-            sparse: true, // Allow null for non-Google users
+            required: true,
             unique: true,
         },
         email: {
@@ -14,13 +14,6 @@ const userSchema = new mongoose.Schema(
             unique: true,
             lowercase: true,
             trim: true,
-        },
-        password: {
-            type: String,
-            // Required only for email/password auth
-            required: function () {
-                return !this.googleId
-            },
         },
         name: {
             type: String,

@@ -5,6 +5,7 @@ import developmentRoutes from './development.routes.js'
 import companyRoutes from './company.routes.js'
 import mockInterviewRoutes from './mockInterview.routes.js'
 import userRoutes from './user.routes.js'
+import adminRoutes from './admin.routes.js'
 
 export default function setupRoutes(app) {
     // API routes
@@ -14,6 +15,7 @@ export default function setupRoutes(app) {
     app.use('/api/companies', companyRoutes)
     app.use('/api/mock-interviews', mockInterviewRoutes)
     app.use('/api/users', userRoutes)
+    app.use('/api/admin', adminRoutes)
 
     // Health check
     app.get('/api/health', (req, res) => {

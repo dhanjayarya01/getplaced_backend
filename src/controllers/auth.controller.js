@@ -13,7 +13,6 @@ export const googleAuthCallback = (req, res, next) => {
     })(req, res, next)
 }
 
-// Controller to get current authenticated user
 export const getCurrentUser = (req, res) => {
     if (req.user) {
         res.json({
@@ -24,6 +23,7 @@ export const getCurrentUser = (req, res) => {
                 email: req.user.email,
                 name: req.user.name,
                 profilePicture: req.user.profilePicture,
+                role: req.user.role || 'user', // Include role field
             },
         })
     } else {

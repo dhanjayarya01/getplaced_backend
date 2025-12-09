@@ -64,6 +64,7 @@ app.get('/', (req, res) => {
             companies: '/api/companies',
             mockInterviews: '/api/mock-interviews',
             users: '/api/users',
+            admin: '/api/admin',
             health: '/api/health',
         },
         documentation: 'See README.md for API documentation',
@@ -94,4 +95,5 @@ app.listen(PORT, () => {
     console.log(`   - Companies: http://localhost:${PORT}/api/companies`)
     console.log(`   - Mock Interviews: http://localhost:${PORT}/api/mock-interviews`)
     console.log(`   - Users: http://localhost:${PORT}/api/users`)
+    console.log(`   - Admin: http://localhost:${PORT}/api/admin`)
 })

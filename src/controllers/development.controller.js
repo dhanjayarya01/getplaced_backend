@@ -5,9 +5,9 @@ export const getAllDevelopmentProblems = async (req, res) => {
     try {
         const {
             difficulty,
-            technology,
-            topic,
-            type, // 'coding', 'project', 'debugging', 'feature-implementation'
+            technology, // Can be single or comma-separated
+            topic, // Can be single or comma-separated
+            type, // Can be single or comma-separated: 'coding', 'project', 'debugging', 'feature-implementation'
             company,
             status,
             page = 1,
@@ -17,10 +17,29 @@ export const getAllDevelopmentProblems = async (req, res) => {
 
         const query = { isActive: true }
 
-        if (difficulty) query.difficulty = difficulty
-        if (technology) query.primaryTechnology = technology
-        if (topic) query.topics = topic
-        if (type) query.type = type
+        if (difficulty) {
+            const difficulties = difficulty.split(',')
+            query.difficulty = difficulties.length > 1 ? { $in: difficulties } : difficulty
+        }
+
+        if (technology) {
+            // Support multiple technologies: ?technology=React,Node.js
+            const technologies = technology.split(',')
+            query.primaryTechnology = technologies.length > 1 ? { $in: technologies } : technology
+        }
+
+        if (topic) {
+            // Support multiple topics: ?topic=Hooks,State Management
+            const topics = topic.split(',')
+            query.topics = topics.length > 1 ? { $in: topics } : topic
+        }
+
+        if (type) {
+            // Support multiple types: ?type=coding,project
+            const types = type.split(',')
+            query.type = types.length > 1 ? { $in: types } : type
+        }
+
         if (company) query.companies = company
 
         let userProgress = []

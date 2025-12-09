@@ -5,8 +5,8 @@ export const getAllDSAProblems = async (req, res) => {
     try {
         const {
             difficulty,
-            dataStructure,
-            pattern,
+            dataStructure, // Can be single or comma-separated
+            pattern, // Can be single or comma-separated
             company,
             status, // 'solved', 'attempted', 'not-started'
             page = 1,
@@ -17,10 +17,27 @@ export const getAllDSAProblems = async (req, res) => {
         const query = { isActive: true }
 
         // Apply filters
-        if (difficulty) query.difficulty = difficulty
-        if (dataStructure) query.dataStructures = dataStructure
-        if (pattern) query.patterns = pattern
-        if (company) query.companies = company
+        if (difficulty) {
+            // Support multiple difficulties: ?difficulty=Easy,Medium
+            const difficulties = difficulty.split(',')
+            query.difficulty = difficulties.length > 1 ? { $in: difficulties } : difficulty
+        }
+
+        if (dataStructure) {
+            // Support multiple data structures: ?dataStructure=Array,String
+            const dataStructures = dataStructure.split(',')
+            query.dataStructures = dataStructures.length > 1 ? { $in: dataStructures } : dataStructure
+        }
+
+        if (pattern) {
+            // Support multiple patterns: ?pattern=Two Pointers,Sliding Window
+            const patterns = pattern.split(',')
+            query.patterns = patterns.length > 1 ? { $in: patterns } : pattern
+        }
+
+        if (company) {
+            query.companies = company
+        }
 
         // If user is authenticated, get their progress
         let userProgress = []
