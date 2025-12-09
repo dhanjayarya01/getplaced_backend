@@ -1,0 +1,30 @@
+import express from 'express'
+import {
+    getAllDSAProblems,
+    getDSAProblem,
+    submitDSASolution,
+    getSubmissionResult,
+    getDSAStats,
+    createDSAProblem,
+    updateDSAProblem,
+    deleteDSAProblem,
+} from '../controllers/dsa.controller.js'
+import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
+
+const router = express.Router()
+
+// Public routes
+router.get('/', getAllDSAProblems)
+router.get('/stats', authenticateUser, getDSAStats)
+router.get('/:id', getDSAProblem)
+
+// Protected routes
+router.post('/:id/submit', authenticateUser, submitDSASolution)
+router.get('/submission/:submissionId', authenticateUser, getSubmissionResult)
+
+// Admin routes
+router.post('/', authenticateUser, isAdmin, createDSAProblem)
+router.put('/:id', authenticateUser, isAdmin, updateDSAProblem)
+router.delete('/:id', authenticateUser, isAdmin, deleteDSAProblem)
+
+export default router

@@ -6,7 +6,7 @@ import dotenv from 'dotenv'
 import cookieParser from 'cookie-parser'
 import connectDB from './src/config/database.js'
 import configurePassport from './src/config/passport.js'
-import authRoutes from './src/routes/auth.routes.js'
+import setupRoutes from './src/routes/index.js'
 
 // Load environment variables
 dotenv.config()
@@ -52,18 +52,26 @@ app.use(
 app.use(passport.initialize())
 app.use(passport.session())
 
-// Routes
+// Root endpoint
 app.get('/', (req, res) => {
     res.json({
         message: 'GetPlaced Backend API',
-        version: '1.0.0',
+        version: '2.0.0',
         endpoints: {
             auth: '/api/auth',
+            dsa: '/api/dsa',
+            development: '/api/development',
+            companies: '/api/companies',
+            mockInterviews: '/api/mock-interviews',
+            users: '/api/users',
+            health: '/api/health',
         },
+        documentation: 'See README.md for API documentation',
     })
 })
 
-app.use('/api/auth', authRoutes)
+// Setup all API routes
+setupRoutes(app)
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -79,4 +87,11 @@ app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`)
     console.log(`📱 Frontend URL: ${process.env.FRONTEND_URL}`)
     console.log(`🔐 Environment: ${process.env.NODE_ENV}`)
+    console.log(`\n📚 API Endpoints:`)
+    console.log(`   - Auth: http://localhost:${PORT}/api/auth`)
+    console.log(`   - DSA: http://localhost:${PORT}/api/dsa`)
+    console.log(`   - Development: http://localhost:${PORT}/api/development`)
+    console.log(`   - Companies: http://localhost:${PORT}/api/companies`)
+    console.log(`   - Mock Interviews: http://localhost:${PORT}/api/mock-interviews`)
+    console.log(`   - Users: http://localhost:${PORT}/api/users`)
 })

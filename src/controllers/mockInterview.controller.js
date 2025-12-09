@@ -1,0 +1,433 @@
+import { MockInterview, MockInterviewSession, User } from '../models/index.js'
+
+// Get all mock interview questions with filters
+export const getAllMockInterviews = async (req, res) => {
+    try {
+        const {
+            type,
+            subType,
+            difficulty,
+            minPackage,
+            maxPackage,
+            company,
+            page = 1,
+            limit = 20,
+            sort = '-createdAt',
+        } = req.query
+
+        const query = { isActive: true }
+
+        if (type) query.type = type
+        if (subType) query.subType = subType
+        if (difficulty) query.difficulty = difficulty
+        if (company) query['companies.name'] = company
+
+        if (minPackage || maxPackage) {
+            query['packageRange.min'] = {}
+            if (minPackage) query['packageRange.min'].$gte = parseInt(minPackage)
+            if (maxPackage) query['packageRange.max'].$lte = parseInt(maxPackage)
+        }
+
+        const skip = (page - 1) * limit
+
+        const questions = await MockInterview.find(query)
+            .select('-technicalDetails.solution -behavioralDetails.sampleAnswer') // Don't send answers
+            .sort(sort)
+            .skip(skip)
+            .limit(parseInt(limit))
+
+        const total = await MockInterview.countDocuments(query)
+
+        res.json({
+            success: true,
+            data: questions,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / limit),
+            },
+        })
+    } catch (error) {
+        console.error('Error fetching mock interviews:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching questions',
+            error: error.message,
+        })
+    }
+}
+
+// Get single mock interview question
+export const getMockInterview = async (req, res) => {
+    try {
+        const { id } = req.params
+
+        const question = await MockInterview.findOne({
+            _id: id,
+            isActive: true,
+        }).select('-technicalDetails.solution -behavioralDetails.sampleAnswer')
+
+        if (!question) {
+            return res.status(404).json({
+                success: false,
+                message: 'Question not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            data: question,
+        })
+    } catch (error) {
+        console.error('Error fetching mock interview:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching question',
+            error: error.message,
+        })
+    }
+}
+
+// Create mock interview session
+export const createMockInterviewSession = async (req, res) => {
+    try {
+        const { type, difficulty, packageRange, questionCount = 5 } = req.body
+
+        if (!type) {
+            return res.status(400).json({
+                success: false,
+                message: 'Interview type is required',
+            })
+        }
+
+        // Build query for questions
+        const query = { isActive: true, type }
+        if (difficulty) query.difficulty = difficulty
+        if (packageRange) {
+            query['packageRange.min'] = { $lte: packageRange.max }
+            query['packageRange.max'] = { $gte: packageRange.min }
+        }
+
+        // Get random questions
+        const questions = await MockInterview.aggregate([
+            { $match: query },
+            { $sample: { size: parseInt(questionCount) } },
+        ])
+
+        if (questions.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'No questions found matching criteria',
+            })
+        }
+
+        // Create session
+        const session = new MockInterviewSession({
+            user: req.user._id,
+            type,
+            difficulty,
+            packageRange,
+            duration: questionCount * 5, // 5 minutes per question
+            questions: questions.map((q, index) => ({
+                questionId: q._id,
+                order: index + 1,
+            })),
+            status: 'scheduled',
+        })
+
+        await session.save()
+
+        res.status(201).json({
+            success: true,
+            message: 'Mock interview session created',
+            data: session,
+        })
+    } catch (error) {
+        console.error('Error creating session:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error creating session',
+            error: error.message,
+        })
+    }
+}
+
+// Start mock interview session
+export const startMockInterviewSession = async (req, res) => {
+    try {
+        const { sessionId } = req.params
+
+        const session = await MockInterviewSession.findOne({
+            _id: sessionId,
+            user: req.user._id,
+        }).populate('questions.questionId')
+
+        if (!session) {
+            return res.status(404).json({
+                success: false,
+                message: 'Session not found',
+            })
+        }
+
+        if (session.status !== 'scheduled') {
+            return res.status(400).json({
+                success: false,
+                message: 'Session already started or completed',
+            })
+        }
+
+        session.status = 'in-progress'
+        session.startedAt = new Date()
+        await session.save()
+
+        res.json({
+            success: true,
+            message: 'Session started',
+            data: session,
+        })
+    } catch (error) {
+        console.error('Error starting session:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error starting session',
+            error: error.message,
+        })
+    }
+}
+
+// Submit answer for a question in session
+export const submitAnswer = async (req, res) => {
+    try {
+        const { sessionId, questionIndex } = req.params
+        const { answer, codeSubmitted, timeSpent } = req.body
+
+        const session = await MockInterviewSession.findOne({
+            _id: sessionId,
+            user: req.user._id,
+        })
+
+        if (!session) {
+            return res.status(404).json({
+                success: false,
+                message: 'Session not found',
+            })
+        }
+
+        if (session.status !== 'in-progress') {
+            return res.status(400).json({
+                success: false,
+                message: 'Session not in progress',
+            })
+        }
+
+        const question = session.questions[questionIndex]
+        if (!question) {
+            return res.status(404).json({
+                success: false,
+                message: 'Question not found',
+            })
+        }
+
+        question.answer = answer
+        question.codeSubmitted = codeSubmitted
+        question.timeSpent = timeSpent
+
+        // TODO: Implement AI evaluation
+        // question.aiEvaluation = await evaluateAnswer(question, answer)
+
+        await session.save()
+
+        res.json({
+            success: true,
+            message: 'Answer submitted',
+            data: question,
+        })
+    } catch (error) {
+        console.error('Error submitting answer:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error submitting answer',
+            error: error.message,
+        })
+    }
+}
+
+// Complete mock interview session
+export const completeMockInterviewSession = async (req, res) => {
+    try {
+        const { sessionId } = req.params
+
+        const session = await MockInterviewSession.findOne({
+            _id: sessionId,
+            user: req.user._id,
+        }).populate('questions.questionId')
+
+        if (!session) {
+            return res.status(404).json({
+                success: false,
+                message: 'Session not found',
+            })
+        }
+
+        if (session.status !== 'in-progress') {
+            return res.status(400).json({
+                success: false,
+                message: 'Session not in progress',
+            })
+        }
+
+        session.status = 'completed'
+        session.completedAt = new Date()
+
+        // Calculate overall score (simplified)
+        const totalScore = session.questions.reduce((sum, q) => sum + (q.score || 0), 0)
+        session.overallScore = totalScore / session.questions.length
+
+        // Calculate XP
+        session.xpEarned = Math.floor(session.overallScore * 10)
+
+        await session.save()
+
+        // Update user stats
+        const user = await User.findById(req.user._id)
+        user.stats.mockInterviewsCompleted += 1
+        user.stats.totalXP += session.xpEarned
+        await user.save()
+
+        res.json({
+            success: true,
+            message: 'Session completed',
+            data: session,
+        })
+    } catch (error) {
+        console.error('Error completing session:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error completing session',
+            error: error.message,
+        })
+    }
+}
+
+// Get user's mock interview sessions
+export const getUserSessions = async (req, res) => {
+    try {
+        const { status, type, page = 1, limit = 10 } = req.query
+
+        const query = { user: req.user._id }
+        if (status) query.status = status
+        if (type) query.type = type
+
+        const skip = (page - 1) * limit
+
+        const sessions = await MockInterviewSession.find(query)
+            .sort('-createdAt')
+            .skip(skip)
+            .limit(parseInt(limit))
+
+        const total = await MockInterviewSession.countDocuments(query)
+
+        res.json({
+            success: true,
+            data: sessions,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / limit),
+            },
+        })
+    } catch (error) {
+        console.error('Error fetching sessions:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching sessions',
+            error: error.message,
+        })
+    }
+}
+
+// Get session details
+export const getSessionDetails = async (req, res) => {
+    try {
+        const { sessionId } = req.params
+
+        const session = await MockInterviewSession.findOne({
+            _id: sessionId,
+            user: req.user._id,
+        }).populate('questions.questionId')
+
+        if (!session) {
+            return res.status(404).json({
+                success: false,
+                message: 'Session not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            data: session,
+        })
+    } catch (error) {
+        console.error('Error fetching session:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching session',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Create mock interview question
+export const createMockInterview = async (req, res) => {
+    try {
+        const question = new MockInterview(req.body)
+        await question.save()
+
+        res.status(201).json({
+            success: true,
+            message: 'Question created successfully',
+            data: question,
+        })
+    } catch (error) {
+        console.error('Error creating question:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error creating question',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Update mock interview question
+export const updateMockInterview = async (req, res) => {
+    try {
+        const { id } = req.params
+
+        const question = await MockInterview.findByIdAndUpdate(id, req.body, {
+            new: true,
+            runValidators: true,
+        })
+
+        if (!question) {
+            return res.status(404).json({
+                success: false,
+                message: 'Question not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            message: 'Question updated successfully',
+            data: question,
+        })
+    } catch (error) {
+        console.error('Error updating question:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error updating question',
+            error: error.message,
+        })
+    }
+}
