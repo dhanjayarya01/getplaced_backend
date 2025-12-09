@@ -1,4 +1,4 @@
-import { Company, CompanyApplication, User } from '../models/index.js'
+import { Company, CompanyApplication, User, DSAProblem, DevelopmentProblem } from '../models/index.js'
 
 // Get all companies with filters
 export const getAllCompanies = async (req, res) => {
@@ -436,6 +436,353 @@ export const updateCompany = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error updating company',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Link DSA problem to company
+export const linkDSAProblem = async (req, res) => {
+    try {
+        const { id } = req.params
+        const { problemId, frequency, round, notes } = req.body
+
+        if (!problemId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Problem ID is required',
+            })
+        }
+
+        // Verify problem exists
+        const problem = await DSAProblem.findById(problemId)
+        if (!problem) {
+            return res.status(404).json({
+                success: false,
+                message: 'DSA problem not found',
+            })
+        }
+
+        const company = await Company.findByIdAndUpdate(
+            id,
+            {
+                $push: {
+                    linkedDSAProblems: {
+                        problem: problemId,
+                        frequency: frequency || 'Medium',
+                        round,
+                        notes,
+                        lastAsked: new Date(),
+                    },
+                },
+            },
+            { new: true }
+        ).populate('linkedDSAProblems.problem')
+
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            message: 'DSA problem linked successfully',
+            data: company,
+        })
+    } catch (error) {
+        console.error('Error linking DSA problem:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error linking DSA problem',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Unlink DSA problem from company
+export const unlinkDSAProblem = async (req, res) => {
+    try {
+        const { id, linkId } = req.params
+
+        const company = await Company.findByIdAndUpdate(
+            id,
+            {
+                $pull: {
+                    linkedDSAProblems: { _id: linkId },
+                },
+            },
+            { new: true }
+        )
+
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            message: 'DSA problem unlinked successfully',
+            data: company,
+        })
+    } catch (error) {
+        console.error('Error unlinking DSA problem:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error unlinking DSA problem',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Link Dev problem to company
+export const linkDevProblem = async (req, res) => {
+    try {
+        const { id } = req.params
+        const { problemId, frequency, round, notes } = req.body
+
+        if (!problemId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Problem ID is required',
+            })
+        }
+
+        // Verify problem exists
+        const problem = await DevelopmentProblem.findById(problemId)
+        if (!problem) {
+            return res.status(404).json({
+                success: false,
+                message: 'Development problem not found',
+            })
+        }
+
+        const company = await Company.findByIdAndUpdate(
+            id,
+            {
+                $push: {
+                    linkedDevProblems: {
+                        problem: problemId,
+                        frequency: frequency || 'Medium',
+                        round,
+                        notes,
+                        lastAsked: new Date(),
+                    },
+                },
+            },
+            { new: true }
+        ).populate('linkedDevProblems.problem')
+
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            message: 'Development problem linked successfully',
+            data: company,
+        })
+    } catch (error) {
+        console.error('Error linking development problem:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error linking development problem',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Unlink Dev problem from company
+export const unlinkDevProblem = async (req, res) => {
+    try {
+        const { id, linkId } = req.params
+
+        const company = await Company.findByIdAndUpdate(
+            id,
+            {
+                $pull: {
+                    linkedDevProblems: { _id: linkId },
+                },
+            },
+            { new: true }
+        )
+
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            message: 'Development problem unlinked successfully',
+            data: company,
+        })
+    } catch (error) {
+        console.error('Error unlinking development problem:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error unlinking development problem',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Add interview question to company
+export const addInterviewQuestion = async (req, res) => {
+    try {
+        const { id } = req.params
+        const { question, type, difficulty, round, answer, tips } = req.body
+
+        if (!question || !type) {
+            return res.status(400).json({
+                success: false,
+                message: 'Question and type are required',
+            })
+        }
+
+        const company = await Company.findByIdAndUpdate(
+            id,
+            {
+                $push: {
+                    interviewQuestions: {
+                        question,
+                        type,
+                        difficulty,
+                        round,
+                        answer,
+                        tips: tips || [],
+                        askedDate: new Date(),
+                        upvotes: 0,
+                    },
+                },
+            },
+            { new: true }
+        )
+
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            message: 'Interview question added successfully',
+            data: company,
+        })
+    } catch (error) {
+        console.error('Error adding interview question:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error adding interview question',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Remove interview question from company
+export const removeInterviewQuestion = async (req, res) => {
+    try {
+        const { id, questionId } = req.params
+
+        const company = await Company.findByIdAndUpdate(
+            id,
+            {
+                $pull: {
+                    interviewQuestions: { _id: questionId },
+                },
+            },
+            { new: true }
+        )
+
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            message: 'Interview question removed successfully',
+            data: company,
+        })
+    } catch (error) {
+        console.error('Error removing interview question:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error removing interview question',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Get company with all linked problems populated
+export const getCompanyWithProblems = async (req, res) => {
+    try {
+        const { id } = req.params
+
+        const company = await Company.findById(id)
+            .populate('linkedDSAProblems.problem')
+            .populate('linkedDevProblems.problem')
+
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            data: company,
+        })
+    } catch (error) {
+        console.error('Error fetching company with problems:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching company',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Delete company (soft delete)
+export const deleteCompany = async (req, res) => {
+    try {
+        const { id } = req.params
+
+        const company = await Company.findByIdAndUpdate(
+            id,
+            { isActive: false },
+            { new: true }
+        )
+
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            message: 'Company deleted successfully',
+        })
+    } catch (error) {
+        console.error('Error deleting company:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error deleting company',
             error: error.message,
         })
     }

@@ -7,6 +7,11 @@ const dsaProblemSchema = new mongoose.Schema(
             required: true,
             trim: true,
         },
+        problemNumber: {
+            type: Number,
+            required: true,
+            unique: true,
+        },
         slug: {
             type: String,
             required: true,

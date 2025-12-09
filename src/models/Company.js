@@ -70,6 +70,68 @@ const companySchema = new mongoose.Schema(
             },
         ],
 
+        // Linked Problems (for company-specific practice)
+        linkedDSAProblems: [
+            {
+                problem: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'DSAProblem',
+                },
+                frequency: {
+                    type: String,
+                    enum: ['Very High', 'High', 'Medium', 'Low'],
+                    default: 'Medium',
+                },
+                lastAsked: Date,
+                round: String, // e.g., "Technical Round 1"
+                notes: String, // Additional context
+            },
+        ],
+
+        linkedDevProblems: [
+            {
+                problem: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'DevelopmentProblem',
+                },
+                frequency: {
+                    type: String,
+                    enum: ['Very High', 'High', 'Medium', 'Low'],
+                    default: 'Medium',
+                },
+                lastAsked: Date,
+                round: String,
+                notes: String,
+            },
+        ],
+
+        // Interview Questions (PYQs - Previously Asked Questions)
+        interviewQuestions: [
+            {
+                question: {
+                    type: String,
+                    required: true,
+                },
+                type: {
+                    type: String,
+                    enum: ['Technical', 'Behavioral', 'HR', 'System Design', 'Aptitude'],
+                    required: true,
+                },
+                difficulty: {
+                    type: String,
+                    enum: ['Easy', 'Medium', 'Hard'],
+                },
+                round: String, // Which round this question was asked
+                answer: String, // Optional sample answer
+                tips: [String], // Tips for answering
+                askedDate: Date, // When it was asked
+                upvotes: {
+                    type: Number,
+                    default: 0,
+                },
+            },
+        ],
+
         // Available Roles
         roles: [
             {

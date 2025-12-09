@@ -102,10 +102,21 @@ export const getDSAProblem = async (req, res) => {
     try {
         const { id } = req.params
 
-        const problem = await DSAProblem.findOne({
-            $or: [{ _id: id }, { slug: id }],
-            isActive: true,
-        }).select('-solution') // Don't send solution initially
+        // Build query - check if id is a valid ObjectId
+        let query = { isActive: true }
+
+        // Check if id is a valid MongoDB ObjectId (24 hex characters)
+        const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
+
+        if (isValidObjectId) {
+            // If valid ObjectId, search by both _id and slug
+            query.$or = [{ _id: id }, { slug: id }]
+        } else {
+            // If not valid ObjectId, only search by slug
+            query.slug = id
+        }
+
+        const problem = await DSAProblem.findOne(query).select('-solution') // Don't send solution initially
 
         if (!problem) {
             return res.status(404).json({

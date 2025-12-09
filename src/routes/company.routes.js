@@ -9,6 +9,14 @@ import {
     submitRound,
     createCompany,
     updateCompany,
+    linkDSAProblem,
+    unlinkDSAProblem,
+    linkDevProblem,
+    unlinkDevProblem,
+    addInterviewQuestion,
+    removeInterviewQuestion,
+    getCompanyWithProblems,
+    deleteCompany,
 } from '../controllers/company.controller.js'
 import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
 
@@ -25,8 +33,22 @@ router.get('/applications/:applicationId', authenticateUser, getApplicationDetai
 router.post('/applications/:applicationId/start-round', authenticateUser, startInterviewRound)
 router.post('/applications/:applicationId/submit-round', authenticateUser, submitRound)
 
-// Admin routes
+// Admin routes - Company Management
 router.post('/', authenticateUser, isAdmin, createCompany)
 router.put('/:id', authenticateUser, isAdmin, updateCompany)
+router.delete('/:id', authenticateUser, isAdmin, deleteCompany)
+router.get('/:id/with-problems', authenticateUser, isAdmin, getCompanyWithProblems)
+
+// Admin routes - Link DSA Problems
+router.post('/:id/link-dsa', authenticateUser, isAdmin, linkDSAProblem)
+router.delete('/:id/link-dsa/:linkId', authenticateUser, isAdmin, unlinkDSAProblem)
+
+// Admin routes - Link Dev Problems
+router.post('/:id/link-dev', authenticateUser, isAdmin, linkDevProblem)
+router.delete('/:id/link-dev/:linkId', authenticateUser, isAdmin, unlinkDevProblem)
+
+// Admin routes - Interview Questions
+router.post('/:id/interview-question', authenticateUser, isAdmin, addInterviewQuestion)
+router.delete('/:id/interview-question/:questionId', authenticateUser, isAdmin, removeInterviewQuestion)
 
 export default router
