@@ -2,6 +2,7 @@ import mongoose from 'mongoose'
 
 const companySchema = new mongoose.Schema(
     {
+       
         name: {
             type: String,
             required: true,
@@ -14,7 +15,7 @@ const companySchema = new mongoose.Schema(
             unique: true,
             lowercase: true,
         },
-        logo: String,
+        logo: String, // Cloudinary URL
         website: String,
         description: String,
 
@@ -22,10 +23,13 @@ const companySchema = new mongoose.Schema(
         industry: String,
         headquarters: String,
         locations: [String],
-        employeeCount: String, // "1000-5000", "10000+"
+        employeeCount: String,
         founded: Number,
 
-        // Hiring Information
+       
+        roles: [String], // e.g., ["Frontend Developer", "Backend Engineer", "Full Stack"]
+
+       
         hiringPipeline: [
             {
                 roundNumber: Number,
@@ -57,8 +61,7 @@ const companySchema = new mongoose.Schema(
                             type: String,
                             enum: ['dsa', 'development', 'mock-interview', 'aptitude'],
                         },
-                        questionId: mongoose.Schema.Types.ObjectId,
-                        // Reference can be to DSAProblem, DevelopmentProblem, or MockInterview
+                       
                     },
                 ],
 
@@ -70,7 +73,7 @@ const companySchema = new mongoose.Schema(
             },
         ],
 
-        // Linked Problems (for company-specific practice)
+       
         linkedDSAProblems: [
             {
                 problem: {
@@ -83,7 +86,7 @@ const companySchema = new mongoose.Schema(
                     default: 'Medium',
                 },
                 lastAsked: Date,
-                round: String, // e.g., "Technical Round 1"
+                role: String, // Which role this problem is for (e.g., "Frontend Developer")
                 notes: String, // Additional context
             },
         ],
@@ -100,12 +103,14 @@ const companySchema = new mongoose.Schema(
                     default: 'Medium',
                 },
                 lastAsked: Date,
-                round: String,
+                role: String, // Which role this problem is for
                 notes: String,
             },
         ],
 
-        // Interview Questions (PYQs - Previously Asked Questions)
+        // ============================================
+        // INTERVIEW QUESTIONS (Company-Level, Role-Based)
+        // ============================================
         interviewQuestions: [
             {
                 question: {
@@ -121,53 +126,23 @@ const companySchema = new mongoose.Schema(
                     type: String,
                     enum: ['Easy', 'Medium', 'Hard'],
                 },
-                round: String, // Which round this question was asked
-                answer: String, // Optional sample answer
-                tips: [String], // Tips for answering
-                askedDate: Date, // When it was asked
-                upvotes: {
-                    type: Number,
-                    default: 0,
-                },
+                role: String, // Which role this question is for
+                
+    
             },
         ],
 
-        // Available Roles
-        roles: [
-            {
-                title: String,
-                level: {
-                    type: String,
-                    enum: ['Intern', 'Entry', 'Mid', 'Senior', 'Lead', 'Principal'],
-                },
-                packageRange: {
-                    min: Number,
-                    max: Number,
-                    currency: {
-                        type: String,
-                        default: 'INR',
-                    },
-                },
-                requirements: {
-                    experience: String,
-                    skills: [String],
-                    education: String,
-                },
-                isActive: {
-                    type: Boolean,
-                    default: true,
-                },
-            },
-        ],
+        // ============================================
+        // COMPANY-LEVEL METADATA
+        // ============================================
 
-        // Interview Difficulty
+        // Overall Interview Difficulty (across all roles)
         difficulty: {
             type: String,
             enum: ['Easy', 'Medium', 'Hard', 'Very Hard'],
-            required: true,
         },
 
-        // Package Information
+        // Overall Package Information (across all roles)
         averagePackage: {
             min: Number,
             max: Number,
@@ -177,43 +152,30 @@ const companySchema = new mongoose.Schema(
             },
         },
 
-        // Benefits & Perks
-        benefits: [String],
-        workCulture: {
-            rating: Number,
-            reviews: [
-                {
-                    userId: {
-                        type: mongoose.Schema.Types.ObjectId,
-                        ref: 'User',
-                    },
-                    rating: Number,
-                    comment: String,
-                    createdAt: Date,
-                },
-            ],
-        },
+        // I WILL CONSIDER THIS LATER
 
-        // Stats
-        stats: {
-            totalApplicants: {
-                type: Number,
-                default: 0,
-            },
-            totalSelected: {
-                type: Number,
-                default: 0,
-            },
-            preparing: {
-                type: Number,
-                default: 0,
-            },
-            averageSelectionRate: Number, // percentage
-        },
+        // // Benefits & Perks
+        // benefits: [String],
+        // workCulture: {
+        //     rating: Number,
+        //     reviews: [
+        //         {
+        //             userId: {
+        //                 type: mongoose.Schema.Types.ObjectId,
+        //                 ref: 'User',
+        //             },
+        //             rating: Number,
+        //             comment: String,
+        //             createdAt: Date,
+        //         },
+        //     ],
+        // },
 
-        // Interview Tips
+       
+
+        
         interviewTips: [String],
-        commonQuestions: [String],
+        
 
         // Status
         isActive: {
@@ -234,7 +196,7 @@ const companySchema = new mongoose.Schema(
     }
 )
 
-// Indexes
+
 companySchema.index({ slug: 1 })
 companySchema.index({ name: 1 })
 companySchema.index({ difficulty: 1 })
