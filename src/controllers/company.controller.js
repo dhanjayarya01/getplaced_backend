@@ -14,7 +14,7 @@ export const getAllCompanies = async (req, res) => {
             sort = '-stats.preparing',
         } = req.query
 
-        const query = { isActive: true }
+        const query = {}
 
         if (difficulty) query.difficulty = difficulty
         if (isHiring !== undefined) query.isHiring = isHiring === 'true'
@@ -61,10 +61,18 @@ export const getCompany = async (req, res) => {
     try {
         const { id } = req.params
 
-        const company = await Company.findOne({
-            $or: [{ _id: id }, { slug: id }],
-            isActive: true,
-        })
+        // Build query - if id is a valid ObjectId, search both _id and slug
+        // Otherwise, only search by slug
+        let query
+        if (id.match(/^[0-9a-fA-F]{24}$/)) {
+            // Valid ObjectId format
+            query = { $or: [{ _id: id }, { slug: id }] }
+        } else {
+            // Not a valid ObjectId, search only by slug
+            query = { slug: id }
+        }
+
+        const company = await Company.findOne(query)
 
         if (!company) {
             return res.status(404).json({
@@ -84,10 +92,8 @@ export const getCompany = async (req, res) => {
 
         res.json({
             success: true,
-            data: {
-                company,
-                userApplication,
-            },
+            data: company, // Return company directly, not nested
+            userApplication, // Keep userApplication separate if needed
         })
     } catch (error) {
         console.error('Error fetching company:', error)
@@ -761,11 +767,8 @@ export const deleteCompany = async (req, res) => {
     try {
         const { id } = req.params
 
-        const company = await Company.findByIdAndUpdate(
-            id,
-            { isActive: false },
-            { new: true }
-        )
+        // Hard delete - permanently remove from database
+        const company = await Company.findByIdAndDelete(id)
 
         if (!company) {
             return res.status(404).json({
@@ -776,7 +779,7 @@ export const deleteCompany = async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Company deleted successfully',
+            message: 'Company permanently deleted',
         })
     } catch (error) {
         console.error('Error deleting company:', error)

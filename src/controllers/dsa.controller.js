@@ -14,7 +14,7 @@ export const getAllDSAProblems = async (req, res) => {
             sort = '-createdAt',
         } = req.query
 
-        const query = { isActive: true }
+        const query = {}
 
         // Apply filters
         if (difficulty) {
@@ -393,16 +393,13 @@ export const updateDSAProblem = async (req, res) => {
     }
 }
 
-// Admin: Delete DSA problem
+// Admin: Delete DSA problem (HARD DELETE)
 export const deleteDSAProblem = async (req, res) => {
     try {
         const { id } = req.params
 
-        const problem = await DSAProblem.findByIdAndUpdate(
-            id,
-            { isActive: false },
-            { new: true }
-        )
+        // Hard delete - permanently remove from database
+        const problem = await DSAProblem.findByIdAndDelete(id)
 
         if (!problem) {
             return res.status(404).json({
@@ -413,7 +410,7 @@ export const deleteDSAProblem = async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Problem deleted successfully',
+            message: 'Problem permanently deleted',
         })
     } catch (error) {
         console.error('Error deleting DSA problem:', error)
