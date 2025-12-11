@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 
 const companySchema = new mongoose.Schema(
     {
-       
+
         name: {
             type: String,
             required: true,
@@ -26,10 +26,10 @@ const companySchema = new mongoose.Schema(
         employeeCount: String,
         founded: Number,
 
-       
+
         roles: [String], // e.g., ["Frontend Developer", "Backend Engineer", "Full Stack"]
 
-       
+
         hiringPipeline: [
             {
                 roundNumber: Number,
@@ -61,7 +61,7 @@ const companySchema = new mongoose.Schema(
                             type: String,
                             enum: ['dsa', 'development', 'mock-interview', 'aptitude'],
                         },
-                       
+
                     },
                 ],
 
@@ -73,7 +73,7 @@ const companySchema = new mongoose.Schema(
             },
         ],
 
-       
+
         linkedDSAProblems: [
             {
                 problem: {
@@ -127,8 +127,8 @@ const companySchema = new mongoose.Schema(
                     enum: ['Easy', 'Medium', 'Hard'],
                 },
                 role: String, // Which role this question is for
-                
-    
+
+
             },
         ],
 
@@ -171,11 +171,34 @@ const companySchema = new mongoose.Schema(
         //     ],
         // },
 
-       
 
-        
+
+        // ============================================
+        // JOB REQUIREMENTS & ELIGIBILITY
+        // ============================================
+
+        requirements: [String], // e.g., ["3+ years of React experience", "Strong problem-solving skills"]
+
+        eligibilityCriteria: {
+            minCGPA: Number,
+            minPercentage: Number,
+            educationLevel: {
+                type: String,
+                enum: ['B.Tech', 'M.Tech', 'BCA', 'MCA', 'B.Sc', 'M.Sc', 'Any Graduate', 'Any Post Graduate'],
+            },
+            allowedBranches: [String], // e.g., ["CSE", "IT", "ECE"]
+            maxBacklogs: Number,
+            yearOfPassing: [Number], // e.g., [2024, 2025]
+            ageLimit: Number,
+        },
+
+        techStack: [String], // e.g., ["React", "Node.js", "MongoDB", "AWS"]
+
+        benefits: [String], // e.g., ["Health Insurance", "Remote Work", "Learning Budget"]
+
+
         interviewTips: [String],
-        
+
 
         // Status
         isActive: {

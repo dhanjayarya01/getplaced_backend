@@ -73,6 +73,8 @@ export const getCompany = async (req, res) => {
         }
 
         const company = await Company.findOne(query)
+            .populate('linkedDSAProblems.problem')
+            .populate('linkedDevProblems.problem')
 
         if (!company) {
             return res.status(404).json({

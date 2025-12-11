@@ -53,6 +53,78 @@ const userSchema = new mongoose.Schema(
             lastActiveDate: Date,
         },
 
+        // Detailed Problem Solving Records
+        solvedDSAProblems: [
+            {
+                problem: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'DSAProblem',
+                },
+                solvedAt: {
+                    type: Date,
+                    default: Date.now,
+                },
+                timeTaken: Number, // in seconds
+                attempts: { type: Number, default: 1 },
+                language: String, // javascript, python, java, cpp
+            },
+        ],
+
+        solvedDevProblems: [
+            {
+                problem: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'DevelopmentProblem',
+                },
+                solvedAt: {
+                    type: Date,
+                    default: Date.now,
+                },
+                timeTaken: Number, // in seconds
+                attempts: { type: Number, default: 1 },
+            },
+        ],
+
+        practicedInterviews: [
+            {
+                company: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'Company',
+                },
+                questionId: String, // Reference to interview question within company
+                question: String, // The actual question text
+                questionType: {
+                    type: String,
+                    enum: ['Technical', 'Behavioral', 'HR', 'System Design', 'Aptitude'],
+                },
+                practicedAt: {
+                    type: Date,
+                    default: Date.now,
+                },
+                notes: String, // User's notes or answer
+            },
+        ],
+
+        companyProgress: [
+            {
+                company: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'Company',
+                },
+                targetRole: String,
+                dsaProblemsCompleted: { type: Number, default: 0 },
+                devProblemsCompleted: { type: Number, default: 0 },
+                interviewQuestionsCompleted: { type: Number, default: 0 },
+                completedRounds: [String], // Array of round names completed
+                lastPracticedAt: Date,
+                startedAt: {
+                    type: Date,
+                    default: Date.now,
+                },
+                isActive: { type: Boolean, default: true },
+            },
+        ],
+
         // Preferences
         preferences: {
             emailNotifications: { type: Boolean, default: true },
