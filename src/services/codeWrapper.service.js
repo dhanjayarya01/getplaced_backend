@@ -348,6 +348,7 @@ int main() {
 #include <queue>
 #include <stack>
 #include <cmath>
+#include <climits>
 using namespace std;
 
 ${userCode}
@@ -382,36 +383,33 @@ export const generateJavaScriptWrapper = (problem, userCode) => {
 
     if (!functionName) return userCode; // Cannot wrap if function name not found
 
+
     return `
 ${userCode}
 
 // Driver Code
-// Only declare fs if not already declared by user (imperfect check)
+// Only declare fs if not already declared by user rules
 if (typeof fs === 'undefined') {
     var fs = require('fs');
 }
 
 try {
     const input = fs.readFileSync(0, 'utf-8').trim();
-    let args;
-    try {
-        args = JSON.parse(input);
-        // If input is not an array (e.g. single number), wrap it in array if arguments length > 1? 
-        // Or assume problem input format is consistent with function args.
-        // For array inputs: function(nums, target) -> input should be [ [nums], target ] or similar?
-        // Current existing standard in this app seems to be simple JSON or raw values.
-    } catch (e) {
-        args = input; // Fallback to raw string
-    }
+    // Split by newline to get arguments (assuming backend ensures newline separation)
+    const lines = input.split('\\n');
+    
+    const args = lines.map(line => {
+        if (!line.trim()) return undefined;
+        try {
+            return JSON.parse(line);
+        } catch (e) {
+            return line; // Fallback to raw string
+        }
+    }).filter(arg => arg !== undefined);
 
     // Call the user's function
-    let result;
-    if (Array.isArray(args)) {
-        // If args is [arg1, arg2], spread it
-        result = ${functionName}(...args);
-    } else {
-        result = ${functionName}(args);
-    }
+    // We assume args array maps directly to function parameters
+    const result = ${functionName}(...args);
 
     // Output the result
     if (result !== undefined) {

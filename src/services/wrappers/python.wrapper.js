@@ -64,13 +64,17 @@ export const generatePythonWrapper = (problem, userCode) => {
         functionCall = `result = ${fn}(${callArgsStr})`;
     }
 
-    let printCode = `print(result, flush=True)`;
+
+    let printCode = `print(result)`;
     const rType = returnType.type;
 
     if (rType && (rType.startsWith('List') || rType === 'dict')) {
-        // Print as JSON string for consistency, replace spaces to match standard CP outputs often
-        printCode = `import json\n    print(json.dumps(result, separators=(',', ':')), flush=True)`;
+        // Print as JSON string for consistency
+        printCode = `import json\n        print(json.dumps(result, separators=(',', ':')))`;
     }
+
+    // Add explicit flush
+    printCode += `\n        import sys\n        sys.stdout.flush()`;
 
     return `${userCode}
 
