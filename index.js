@@ -17,11 +17,10 @@ const app = express()
 const PORT = process.env.PORT || 5000
 
 // --------------------------------------------------
-// 🔐 IMPORTANT: trust proxy (Render / Heroku / Railway)
+// 🔐 IMPORTANT: trust proxy (Render / Heroku / Railway / DigitalOcean)
+// Required for 'secure' cookies to work behind a proxy
 // --------------------------------------------------
-if (process.env.NODE_ENV === 'production') {
-    app.set('trust proxy', 1)
-}
+app.set('trust proxy', 1)
 
 // --------------------------------------------------
 // 📦 Connect to MongoDB
@@ -38,17 +37,33 @@ configurePassport()
 // --------------------------------------------------
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
-app.use(cookieParser())
+// Pass secret to cookie parser for signed cookies
+app.use(cookieParser(process.env.SESSION_SECRET))
 
 // --------------------------------------------------
 // 🌍 CORS Configuration (MUST match frontend)
 // --------------------------------------------------
+const allowedOrigins = [
+    process.env.FRONTEND_URL,
+    'http://localhost:3000',
+    'https://getplaced-vrjp.vercel.app'
+].filter(Boolean);
+
 app.use(
     cors({
-        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+        origin: function (origin, callback) {
+            // Allow requests with no origin (like mobile apps or curl requests)
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.indexOf(origin) === -1) {
+                // For development, you might want to allow all, but be careful
+                // return callback(null, true); 
+                return callback(new Error('The CORS policy for this site does not allow access from the specified Origin.'), false);
+            }
+            return callback(null, true);
+        },
         credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With'],
         exposedHeaders: ['Set-Cookie'],
     })
 )
@@ -56,30 +71,36 @@ app.use(
 // --------------------------------------------------
 // 🗄️ Session Configuration (PRODUCTION READY)
 // --------------------------------------------------
+const isProduction = process.env.NODE_ENV === 'production';
+
 app.use(
     session({
         name: 'getplaced.sid',
-
         secret: process.env.SESSION_SECRET,
         resave: false,
         saveUninitialized: false,
-
-        proxy: true, // 🔥 REQUIRED on DigitalOcean/production
+        proxy: true, // 🔥 REQUIRED for secure cookies behind proxy
 
         store: MongoStore.create({
             mongoUrl: process.env.MONGODB_URI,
             collectionName: 'sessions',
             ttl: 24 * 60 * 60, // 1 day
+            autoRemove: 'native',
+            touchAfter: 24 * 3600 // time period in seconds
         }),
 
         cookie: {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production', // HTTPS only in prod
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            // 🔥 CRITICAL: For Cross-Site (Vercel -> DigitalOcean), we NEED:
+            // 1. secure: true (Cookie sent over HTTPS only)
+            // 2. sameSite: 'none' (Cookie sent in cross-site requests)
+            secure: true,
+            sameSite: 'none',
             maxAge: 24 * 60 * 60 * 1000, // 1 day
-            path: '/', // Ensure cookie is available for all paths
-            // Don't set domain - let browser handle cross-domain cookies
-            // For cross-domain: sameSite='none' requires secure=true
+            path: '/',
+            // Domain: undefined allows the cookie to be "host-only" or match the backend domain.
+            // Do NOT set it to the frontend domain.
+            domain: undefined
         },
     })
 )
@@ -99,6 +120,8 @@ app.get('/', (req, res) => {
         version: '2.0.0',
         environment: process.env.NODE_ENV,
         authenticated: req.isAuthenticated?.() || false,
+        sessionID: req.sessionID,
+        cookie: req.session?.cookie,
         endpoints: {
             auth: '/api/auth',
             dsa: '/api/dsa',
@@ -137,14 +160,6 @@ app.listen(PORT, () => {
     console.log(`📱 Frontend URL: ${process.env.FRONTEND_URL}`)
     console.log(`🔐 Environment: ${process.env.NODE_ENV}`)
     console.log(`📦 MongoDB: Connected`)
-    console.log(`\n📚 API Endpoints:`)
-    console.log(`   - Auth: /api/auth`)
-    console.log(`   - DSA: /api/dsa`)
-    console.log(`   - Development: /api/development`)
-    console.log(`   - Companies: /api/companies`)
-    console.log(`   - Mock Interviews: /api/mock-interviews`)
-    console.log(`   - Users: /api/users`)
-    console.log(`   - Admin: /api/admin`)
 })
 
 export default app
