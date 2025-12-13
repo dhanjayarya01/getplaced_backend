@@ -24,9 +24,26 @@ export const googleAuthCallback = (req, res, next) => {
             console.log('✅ User logged in successfully:', user.email)
             console.log('✅ Session ID:', req.sessionID)
             console.log('✅ Is authenticated:', req.isAuthenticated())
+            console.log('✅ Cookie config:', {
+                httpOnly: req.session.cookie.httpOnly,
+                secure: req.session.cookie.secure,
+                sameSite: req.session.cookie.sameSite,
+                domain: req.session.cookie.domain
+            })
             
-            // Redirect to callback page so frontend can verify session
-            res.redirect(`${process.env.FRONTEND_URL}/auth/callback`)
+            // Save session before redirect to ensure cookie is persisted
+            req.session.save((err) => {
+                if (err) {
+                    console.error('❌ Session save error:', err)
+                    return res.redirect(`${process.env.FRONTEND_URL}/login?error=session_failed`)
+                }
+                
+                console.log('✅ Session saved successfully')
+                console.log('✅ Redirecting to:', `${process.env.FRONTEND_URL}/auth/callback`)
+                
+                // Redirect to callback page so frontend can verify session
+                res.redirect(`${process.env.FRONTEND_URL}/auth/callback`)
+            })
         })
     })(req, res, next)
 }

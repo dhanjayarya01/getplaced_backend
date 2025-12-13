@@ -47,6 +47,9 @@ app.use(
     cors({
         origin: process.env.FRONTEND_URL || 'http://localhost:3000',
         credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+        exposedHeaders: ['Set-Cookie'],
     })
 )
 
@@ -76,6 +79,7 @@ app.use(
             maxAge: 24 * 60 * 60 * 1000, // 1 day
             path: '/', // Ensure cookie is available for all paths
             // Don't set domain - let browser handle cross-domain cookies
+            // For cross-domain: sameSite='none' requires secure=true
         },
     })
 )
