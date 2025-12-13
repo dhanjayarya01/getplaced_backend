@@ -166,47 +166,8 @@ export const getDSAProblem = async (req, res) => {
 
 // Helper to wrap user code with driver code
 const wrapCode = (code, language, problem) => {
-    // Use dedicated wrapper service for C and C++ with problem metadata
-    if (language === 'c' || language === 'cpp') {
-        return codeWrapperService.wrapCode(problem, code, language);
-    }
-
-    // Basic wrapper for JavaScript
-    if (language === 'javascript') {
-        // Try to find function name
-        const functionMatch = code.match(/function\s+(\w+)|const\s+(\w+)\s*=\s*\(|var\s+(\w+)\s*=\s*\(|let\s+(\w+)\s*=\s*\(/)
-        const functionName = functionMatch ? (functionMatch[1] || functionMatch[2] || functionMatch[3] || functionMatch[4]) : null
-
-        if (!functionName) return code // Cannot wrap if function name not found
-
-        return `
-${code}
-
-// Driver Code
-const fs = require('fs');
-try {
-    const input = fs.readFileSync(0, 'utf-8').trim();
-    let args;
-    try {
-        args = JSON.parse(input);
-    } catch (e) {
-        args = input; // Fallback to raw string
-    }
-
-    // Call the user's function
-    const result = ${functionName}(args);
-
-    // Output the result
-    if (result !== undefined) {
-        console.log(JSON.stringify(result));
-    }
-} catch (error) {
-    console.error(error.message);
-}
-`
-    }
-
-    return code
+    // Delegate everything to codeWrapperService
+    return codeWrapperService.wrapCode(problem, code, language);
 }
 
 // Run code against visible test cases only (for "Run" button)
@@ -234,10 +195,26 @@ export const runDSACode = async (req, res) => {
             })
         }
 
+
+        // Helper to format input: split by comma ignoring commas in brackets, join with newline
+        const formatInput = (input) => {
+            if (!input) return '';
+            // Split by comma, but only if not enclosed in brackets
+            // This regex matches a comma if it's NOT followed by a closing bracket without an opening bracket in between??
+            // Actually, simpler regex: split by comma that is NOT inside brackets.
+            // Using a simple stack-based parser or complex regex.
+            // Regex: /,(?![^\[]*\])/ works for non-nested brackets.
+            return input.split(/,(?![^\[]*\])/).map(s => s.trim()).join('\n');
+        };
+
         // Get only visible test cases (max 3 for "Run")
         const visibleTestCases = problem.testCases
             .filter((tc) => !tc.isHidden)
             .slice(0, 3)
+            .map(tc => ({
+                ...tc.toObject(),
+                input: formatInput(tc.input) // Format input for Judge0
+            }))
 
         if (visibleTestCases.length === 0) {
             return res.status(400).json({
@@ -248,6 +225,7 @@ export const runDSACode = async (req, res) => {
 
         // Wrap the user's code
         const wrappedCode = wrapCode(code, language, problem)
+
 
         // Run code against visible test cases using Judge0
         const result = await judge0Service.runTestCases(
@@ -298,8 +276,20 @@ export const submitDSASolution = async (req, res) => {
             })
         }
 
+
         // Wrap the user's code
         const wrappedCode = wrapCode(code, language, problem)
+
+        // Helper to format input
+        const formatInput = (input) => {
+            if (!input) return '';
+            return input.split(/,(?![^\[]*\])/).map(s => s.trim()).join('\n');
+        };
+
+        const formattedTestCases = problem.testCases.map(tc => ({
+            ...tc.toObject(),
+            input: formatInput(tc.input)
+        }));
 
         // Get or create user progress
         let userProgress = await UserProgress.findOne({
@@ -327,7 +317,7 @@ export const submitDSASolution = async (req, res) => {
             executionResult = await judge0Service.runTestCases(
                 wrappedCode,
                 language,
-                problem.testCases, // All test cases including hidden
+                formattedTestCases, // All test cases including hidden, formatted
                 problem.timeLimit,
                 problem.memoryLimit
             )
