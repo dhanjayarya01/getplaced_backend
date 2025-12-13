@@ -14,27 +14,35 @@ dotenv.config()
 const app = express()
 const PORT = process.env.PORT || 5000
 
+// REQUIRED for DigitalOcean App Platform reverse proxy (HTTPS)
+app.set("trust proxy", 1);
+
 // Connect to MongoDB
 connectDB()
 
 // Configure Passport
 configurePassport()
 
-
 // Middleware
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
 
-// CORS configuration
+// ======================
+// CORS FIX (WORKING CONFIG)
+// ======================
 app.use(
     cors({
-        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-        credentials: true, // Allow cookies to be sent
+        origin: process.env.FRONTEND_URL, // MUST be exactly the Vercel URL
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization']
     })
 )
 
-// Session configuration
+// ======================
+// SESSION FIX (WORKING CONFIG)
+// ======================
 app.use(
     session({
         secret: process.env.SESSION_SECRET || 'your-secret-key',
@@ -43,8 +51,8 @@ app.use(
         cookie: {
             maxAge: 24 * 60 * 60 * 1000, // 24 hours
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production', // HTTPS in production
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            secure: true,      // DigitalOcean App Platform uses HTTPS
+            sameSite: "none",  // REQUIRED for cross-site (Vercel <-> DO)
         },
     })
 )
@@ -58,6 +66,8 @@ app.get('/', (req, res) => {
     res.json({
         message: 'GetPlaced Backend API',
         version: '2.0.0',
+        frontend: process.env.FRONTEND_URL,
+        environment: process.env.NODE_ENV,
         endpoints: {
             auth: '/api/auth',
             dsa: '/api/dsa',
@@ -66,9 +76,8 @@ app.get('/', (req, res) => {
             mockInterviews: '/api/mock-interviews',
             users: '/api/users',
             admin: '/api/admin',
-            health: '/api/health',
-        },
-        documentation: 'See README.md for API documentation',
+            health: '/api/health'
+        }
     })
 })
 
@@ -89,12 +98,4 @@ app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`)
     console.log(`📱 Frontend URL: ${process.env.FRONTEND_URL}`)
     console.log(`🔐 Environment: ${process.env.NODE_ENV}`)
-    console.log(`\n📚 API Endpoints:`)
-    console.log(`   - Auth: http://localhost:${PORT}/api/auth`)
-    console.log(`   - DSA: http://localhost:${PORT}/api/dsa`)
-    console.log(`   - Development: http://localhost:${PORT}/api/development`)
-    console.log(`   - Companies: http://localhost:${PORT}/api/companies`)
-    console.log(`   - Mock Interviews: http://localhost:${PORT}/api/mock-interviews`)
-    console.log(`   - Users: http://localhost:${PORT}/api/users`)
-    console.log(`   - Admin: http://localhost:${PORT}/api/admin`)
 })
