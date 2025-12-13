@@ -9,23 +9,36 @@ export const googleAuth = passport.authenticate('google', {
 export const googleAuthCallback = (req, res, next) => {
     passport.authenticate('google', (err, user) => {
         if (err || !user) {
+            console.error('Google auth failed:', err)
             return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`)
         }
 
         // ✅ CRITICAL: Call req.logIn() to create and persist session
         req.logIn(user, (err) => {
             if (err) {
+                console.error('Session login failed:', err)
                 return res.redirect(`${process.env.FRONTEND_URL}/login?error=session_failed`)
             }
 
             // ✅ SESSION IS CREATED HERE
-            res.redirect(`${process.env.FRONTEND_URL}/dashboard`)
+            console.log('✅ User logged in successfully:', user.email)
+            console.log('✅ Session ID:', req.sessionID)
+            console.log('✅ Is authenticated:', req.isAuthenticated())
+            
+            // Redirect to callback page so frontend can verify session
+            res.redirect(`${process.env.FRONTEND_URL}/auth/callback`)
         })
     })(req, res, next)
 }
 
 export const getCurrentUser = (req, res) => {
-    if (req.user) {
+    console.log('🔍 getCurrentUser called')
+    console.log('🔍 Session ID:', req.sessionID)
+    console.log('🔍 Is authenticated:', req.isAuthenticated?.())
+    console.log('🔍 User:', req.user ? 'exists' : 'null')
+    console.log('🔍 Cookies:', req.headers.cookie)
+    
+    if (req.isAuthenticated && req.isAuthenticated() && req.user) {
         res.json({
             success: true,
             user: {
@@ -38,6 +51,7 @@ export const getCurrentUser = (req, res) => {
             },
         })
     } else {
+        console.log('❌ Not authenticated - returning 401')
         res.status(401).json({
             success: false,
             message: 'Not authenticated',

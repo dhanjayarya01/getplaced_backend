@@ -74,6 +74,8 @@ app.use(
             secure: process.env.NODE_ENV === 'production', // HTTPS only in prod
             sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
             maxAge: 24 * 60 * 60 * 1000, // 1 day
+            path: '/', // Ensure cookie is available for all paths
+            // Don't set domain - let browser handle cross-domain cookies
         },
     })
 )
