@@ -30,36 +30,41 @@ export const googleAuthCallback = (req, res, next) => {
                 sameSite: req.session.cookie.sameSite,
                 domain: req.session.cookie.domain
             })
-            
+
             // Save session before redirect to ensure cookie is persisted
             req.session.save((err) => {
                 if (err) {
                     console.error('❌ Session save error:', err)
                     return res.redirect(`${process.env.FRONTEND_URL}/login?error=session_failed`)
                 }
-                
+
                 console.log('✅ Session saved successfully')
-                
+
                 // 🔥 CRITICAL: For cross-domain cookies to work, we must ensure:
                 // 1. Cookie is set on backend domain (whale-app-4hikp.ondigitalocean.app)
                 // 2. Frontend makes requests with credentials: true (✅ already done)
                 // 3. Cookie has SameSite=None and Secure=true (✅ already done)
                 // 4. Cookie domain is NOT set (✅ already done - domain: undefined)
-                
+
                 // The issue: Cookie is set during redirect, but browser might not store it
                 // Solution: Ensure the redirect response includes the Set-Cookie header
-                
+
                 // Log response headers before redirect
                 const headers = res.getHeaders()
                 console.log('✅ Response headers:', Object.keys(headers))
-                
+
                 // Check if Set-Cookie will be in the response
                 // Note: express-session sets this automatically, but we can't see it here
                 // because it's set during the redirect response
-                
+
                 console.log('✅ Redirecting to:', `${process.env.FRONTEND_URL}/auth/callback`)
                 console.log('⚠️  IMPORTANT: Browser should store cookie from redirect and send it on subsequent requests')
-                
+
+                // DEBUG: Check if secure cookie will be sent
+                console.log('🔍 Protocol:', req.protocol)
+                console.log('🔍 Secure:', req.secure)
+                console.log('🔍 X-Forwarded-Proto:', req.headers['x-forwarded-proto'])
+
                 // Redirect to callback page so frontend can verify session
                 // express-session will automatically set the Set-Cookie header in the redirect response
                 res.redirect(`${process.env.FRONTEND_URL}/auth/callback`)
@@ -74,7 +79,7 @@ export const getCurrentUser = (req, res) => {
     console.log('🔍 Is authenticated:', req.isAuthenticated?.())
     console.log('🔍 User:', req.user ? 'exists' : 'null')
     console.log('🔍 Cookies:', req.headers.cookie)
-    
+
     if (req.isAuthenticated && req.isAuthenticated() && req.user) {
         res.json({
             success: true,
