@@ -39,11 +39,29 @@ export const googleAuthCallback = (req, res, next) => {
                 }
                 
                 console.log('✅ Session saved successfully')
+                
+                // 🔥 CRITICAL: For cross-domain cookies to work, we must ensure:
+                // 1. Cookie is set on backend domain (whale-app-4hikp.ondigitalocean.app)
+                // 2. Frontend makes requests with credentials: true (✅ already done)
+                // 3. Cookie has SameSite=None and Secure=true (✅ already done)
+                // 4. Cookie domain is NOT set (✅ already done - domain: undefined)
+                
+                // The issue: Cookie is set during redirect, but browser might not store it
+                // Solution: Ensure the redirect response includes the Set-Cookie header
+                
+                // Log response headers before redirect
+                const headers = res.getHeaders()
+                console.log('✅ Response headers:', Object.keys(headers))
+                
+                // Check if Set-Cookie will be in the response
+                // Note: express-session sets this automatically, but we can't see it here
+                // because it's set during the redirect response
+                
                 console.log('✅ Redirecting to:', `${process.env.FRONTEND_URL}/auth/callback`)
-                console.log('✅ Response headers will include Set-Cookie for getplaced.sid')
+                console.log('⚠️  IMPORTANT: Browser should store cookie from redirect and send it on subsequent requests')
                 
                 // Redirect to callback page so frontend can verify session
-                // express-session will automatically set the cookie in the redirect response
+                // express-session will automatically set the Set-Cookie header in the redirect response
                 res.redirect(`${process.env.FRONTEND_URL}/auth/callback`)
             })
         })

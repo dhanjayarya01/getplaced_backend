@@ -35,4 +35,17 @@ router.get('/check', checkAuth)
 // @access  Private
 router.get('/logout', isAuthenticated, logout)
 
+// @route   GET /api/auth/test-cookie
+// @desc    Test endpoint to check if cookies are being sent
+// @access  Public
+router.get('/test-cookie', (req, res) => {
+    res.json({
+        success: true,
+        cookies: req.headers.cookie || 'NO COOKIES',
+        sessionID: req.sessionID,
+        isAuthenticated: req.isAuthenticated?.() || false,
+        user: req.user || null,
+    })
+})
+
 export default router
