@@ -58,10 +58,10 @@ export const createSubmission = async (
         }
 
         const submissionData = {
-            source_code: sourceCode,
+            source_code: Buffer.from(sourceCode).toString('base64'),
             language_id: languageId,
-            stdin: stdin,
-            expected_output: expectedOutput,
+            stdin: Buffer.from(stdin).toString('base64'),
+            expected_output: Buffer.from(expectedOutput).toString('base64'),
             cpu_time_limit: timeLimit,
             memory_limit: memoryLimit,
         }
@@ -76,7 +76,7 @@ export const createSubmission = async (
 
         console.log(`Submitting to Judge0 (${language}):`, { ...submissionData, source_code: '...' })
 
-        const response = await axios.post(`${JUDGE0_URL}/submissions?base64_encoded=false&wait=false`, submissionData, {
+        const response = await axios.post(`${JUDGE0_URL}/submissions?base64_encoded=true&wait=false`, submissionData, {
             headers,
         })
 
@@ -106,7 +106,7 @@ export const getSubmissionResult = async (token, maxRetries = 10, retryDelay = 1
         let retries = 0
 
         while (retries < maxRetries) {
-            const response = await axios.get(`${JUDGE0_URL}/submissions/${token}?base64_encoded=false`, {
+            const response = await axios.get(`${JUDGE0_URL}/submissions/${token}?base64_encoded=true`, {
                 headers,
             })
 
@@ -114,6 +114,12 @@ export const getSubmissionResult = async (token, maxRetries = 10, retryDelay = 1
             const statusId = result.status.id
 
             console.log('Judge0 Poll Result:', result) // Log the raw result from Judge0
+
+            // Helper to decode base64
+            const decode = (str) => {
+                if (!str) return ''
+                return Buffer.from(str, 'base64').toString('utf-8')
+            }
 
             // Check if processing is complete (status ID > 2)
             if (statusId > 2) {
@@ -123,10 +129,10 @@ export const getSubmissionResult = async (token, maxRetries = 10, retryDelay = 1
                     statusId,
                     time: result.time, // Execution time in seconds
                     memory: result.memory, // Memory in KB
-                    stdout: result.stdout?.trim() || '',
-                    stderr: result.stderr?.trim() || '',
-                    compileOutput: result.compile_output?.trim() || '',
-                    message: result.message || '',
+                    stdout: decode(result.stdout).trim(),
+                    stderr: decode(result.stderr).trim(),
+                    compileOutput: decode(result.compile_output).trim(),
+                    message: decode(result.message),
                     exitCode: result.exit_code,
                     accepted: statusId === 3, // Accepted
                 }

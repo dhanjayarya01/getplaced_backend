@@ -1,5 +1,6 @@
 import { DSAProblem, UserProgress, Submission } from '../models/index.js'
 import judge0Service from '../services/judge0.service.js'
+import codeWrapperService from '../services/codeWrapper.service.js'
 
 // Get all DSA problems with filters
 export const getAllDSAProblems = async (req, res) => {
@@ -164,7 +165,12 @@ export const getDSAProblem = async (req, res) => {
 }
 
 // Helper to wrap user code with driver code
-const wrapCode = (code, language) => {
+const wrapCode = (code, language, problem) => {
+    // Use dedicated wrapper service for C and C++ with problem metadata
+    if (language === 'c' || language === 'cpp') {
+        return codeWrapperService.wrapCode(problem, code, language);
+    }
+
     // Basic wrapper for JavaScript
     if (language === 'javascript') {
         // Try to find function name
@@ -196,43 +202,6 @@ try {
     }
 } catch (error) {
     console.error(error.message);
-}
-`
-    }
-
-    // Wrapper for C
-    if (language === 'c') {
-        return `
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
-
-// User Code
-${code}
-
-// Driver Code
-int main() {
-    char buffer[4096];
-    // Read all input from stdin
-    // Note: This is a simplified driver. In a real system, we'd need robust parsing 
-    // based on the problem signature (int, array, string, etc.)
-    // For now, we assume the user reads from stdin or we pass raw input.
-    
-    // However, since we can't easily parse generic args in C without a schema, 
-    // we will assume the user's solution() function takes no args and reads from stdin itself,
-    // OR we just rely on standard specific drivers per problem if we had that system.
-    
-    // Simplest approach for "generic" C support without per-problem drivers:
-    // User writes 'void solution() { ... }' or 'int main() { ... }'
-    // BUT Judge0 calls main(). If user provides main(), we can't wrap it easily without collision.
-    
-    // Let's assume user provides 'solution()' and we call it.
-    // If user provides main, they should select "Custom" or distinct mode (not supported yet).
-    
-    solution();
-    
-    return 0;
 }
 `
     }
@@ -278,7 +247,7 @@ export const runDSACode = async (req, res) => {
         }
 
         // Wrap the user's code
-        const wrappedCode = wrapCode(code, language)
+        const wrappedCode = wrapCode(code, language, problem)
 
         // Run code against visible test cases using Judge0
         const result = await judge0Service.runTestCases(
@@ -330,7 +299,7 @@ export const submitDSASolution = async (req, res) => {
         }
 
         // Wrap the user's code
-        const wrappedCode = wrapCode(code, language)
+        const wrappedCode = wrapCode(code, language, problem)
 
         // Get or create user progress
         let userProgress = await UserProgress.findOne({
