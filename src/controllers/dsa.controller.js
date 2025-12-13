@@ -1,14 +1,15 @@
 import { DSAProblem, UserProgress, Submission } from '../models/index.js'
+import judge0Service from '../services/judge0.service.js'
 
 // Get all DSA problems with filters
 export const getAllDSAProblems = async (req, res) => {
     try {
         const {
             difficulty,
-            dataStructure, // Can be single or comma-separated
-            pattern, // Can be single or comma-separated
+            dataStructure,
+            pattern,
             company,
-            status, // 'solved', 'attempted', 'not-started'
+            status,
             page = 1,
             limit = 20,
             sort = '-createdAt',
@@ -16,21 +17,17 @@ export const getAllDSAProblems = async (req, res) => {
 
         const query = {}
 
-        // Apply filters
         if (difficulty) {
-            // Support multiple difficulties: ?difficulty=Easy,Medium
             const difficulties = difficulty.split(',')
             query.difficulty = difficulties.length > 1 ? { $in: difficulties } : difficulty
         }
 
         if (dataStructure) {
-            // Support multiple data structures: ?dataStructure=Array,String
             const dataStructures = dataStructure.split(',')
             query.dataStructures = dataStructures.length > 1 ? { $in: dataStructures } : dataStructure
         }
 
         if (pattern) {
-            // Support multiple patterns: ?pattern=Two Pointers,Sliding Window
             const patterns = pattern.split(',')
             query.patterns = patterns.length > 1 ? { $in: patterns } : pattern
         }
@@ -87,6 +84,7 @@ export const getAllDSAProblems = async (req, res) => {
                 pages: Math.ceil(total / limit),
             },
         })
+        console.log("problemsWithProgress________", problemsWithProgress)
     } catch (error) {
         console.error('Error fetching DSA problems:', error)
         res.status(500).json({
@@ -102,14 +100,13 @@ export const getDSAProblem = async (req, res) => {
     try {
         const { id } = req.params
 
-        // Build query - check if id is a valid ObjectId
+
         let query = { isActive: true }
 
         // Check if id is a valid MongoDB ObjectId (24 hex characters)
         const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
 
         if (isValidObjectId) {
-            // If valid ObjectId, search by both _id and slug
             query.$or = [{ _id: id }, { slug: id }]
         } else {
             // If not valid ObjectId, only search by slug
@@ -142,7 +139,7 @@ export const getDSAProblem = async (req, res) => {
             })
                 .sort('-createdAt')
                 .limit(10)
-                .select('-code') // Don't send full code in list
+                .select('code') // Don't send full code in list
         }
 
         res.json({
@@ -153,6 +150,7 @@ export const getDSAProblem = async (req, res) => {
                 recentSubmissions: submissions,
             },
         })
+        console.log("submissions________", submissions)
     } catch (error) {
         console.error('Error fetching DSA problem:', error)
         res.status(500).json({
@@ -163,7 +161,109 @@ export const getDSAProblem = async (req, res) => {
     }
 }
 
-// Submit solution for DSA problem
+// Helper to wrap user code with driver code
+const wrapCode = (code, language) => {
+    // Basic wrapper for JavaScript
+    if (language === 'javascript') {
+        // Try to find function name
+        const functionMatch = code.match(/function\s+(\w+)|const\s+(\w+)\s*=\s*\(|var\s+(\w+)\s*=\s*\(|let\s+(\w+)\s*=\s*\(/)
+        const functionName = functionMatch ? (functionMatch[1] || functionMatch[2] || functionMatch[3] || functionMatch[4]) : null
+
+        if (!functionName) return code // Cannot wrap if function name not found
+
+        return `
+${code}
+
+// Driver Code
+const fs = require('fs');
+try {
+    const input = fs.readFileSync(0, 'utf-8').trim();
+    let args;
+    try {
+        args = JSON.parse(input);
+    } catch (e) {
+        args = input; // Fallback to raw string
+    }
+
+    // Call the user's function
+    const result = ${functionName}(args);
+
+    // Output the result
+    if (result !== undefined) {
+        console.log(JSON.stringify(result));
+    }
+} catch (error) {
+    console.error(error.message);
+}
+`
+    }
+
+    return code
+}
+
+// Run code against visible test cases only (for "Run" button)
+export const runDSACode = async (req, res) => {
+    try {
+        const { id } = req.params
+        const { code, language } = req.body
+
+        if (!code || !language) {
+            return res.status(400).json({
+                success: false,
+                message: 'Code and language are required',
+            })
+        }
+
+        // Check if id is a valid MongoDB ObjectId
+        const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
+        const query = isValidObjectId ? { _id: id } : { slug: id }
+
+        const problem = await DSAProblem.findOne(query)
+        if (!problem) {
+            return res.status(404).json({
+                success: false,
+                message: 'Problem not found',
+            })
+        }
+
+        // Get only visible test cases
+        const visibleTestCases = problem.testCases.filter((tc) => !tc.isHidden)
+
+        if (visibleTestCases.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No test cases available for this problem',
+            })
+        }
+
+        // Wrap the user's code
+        const wrappedCode = wrapCode(code, language)
+
+        // Run code against visible test cases using Judge0
+        const result = await judge0Service.runTestCases(
+            wrappedCode,
+            language,
+            visibleTestCases,
+            problem.timeLimit,
+            problem.memoryLimit
+        )
+
+        res.json({
+            success: true,
+            message: 'Code executed successfully',
+            data: result,
+        })
+    } catch (error) {
+        console.error('Error running code:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error running code',
+            error: error.message,
+        })
+    }
+}
+
+// Submit solution for DSA problem (runs ALL test cases including hidden)
 export const submitDSASolution = async (req, res) => {
     try {
         const { id } = req.params
@@ -176,13 +276,20 @@ export const submitDSASolution = async (req, res) => {
             })
         }
 
-        const problem = await DSAProblem.findById(id)
+        // Check if id is a valid MongoDB ObjectId
+        const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
+        const query = isValidObjectId ? { _id: id } : { slug: id }
+
+        const problem = await DSAProblem.findOne(query)
         if (!problem) {
             return res.status(404).json({
                 success: false,
                 message: 'Problem not found',
             })
         }
+
+        // Wrap the user's code
+        const wrappedCode = wrapCode(code, language)
 
         // Get or create user progress
         let userProgress = await UserProgress.findOne({
@@ -204,7 +311,78 @@ export const submitDSASolution = async (req, res) => {
 
         userProgress.totalAttempts += 1
 
-        // Create submission
+        // Run code against ALL test cases using Judge0
+        let executionResult
+        try {
+            executionResult = await judge0Service.runTestCases(
+                wrappedCode,
+                language,
+                problem.testCases, // All test cases including hidden
+                problem.timeLimit,
+                problem.memoryLimit
+            )
+        } catch (execError) {
+            console.error('Judge0 execution error:', execError)
+
+            // Create submission with error
+            const submission = new Submission({
+                user: req.user._id,
+                problemType: 'dsa',
+                problemId: problem._id,
+                code,
+                language,
+                attemptNumber: userProgress.totalAttempts,
+                status: 'runtime-error',
+                compilationError: execError.message,
+            })
+            await submission.save()
+            await userProgress.save()
+
+            return res.status(500).json({
+                success: false,
+                message: 'Code execution failed',
+                error: execError.message,
+            })
+        }
+
+        // Determine submission status based on execution result
+        let submissionStatus = 'wrong-answer'
+        if (executionResult.accepted) {
+            submissionStatus = 'accepted'
+        } else if (executionResult.testResults.some((r) => r.status === 'Time Limit Exceeded')) {
+            submissionStatus = 'time-limit-exceeded'
+        } else if (executionResult.testResults.some((r) => r.status === 'Compilation Error')) {
+            submissionStatus = 'compilation-error'
+        } else if (executionResult.testResults.some((r) => r.status?.includes('Runtime Error'))) {
+            submissionStatus = 'runtime-error'
+        }
+
+        // Calculate XP earned for accepted solutions
+        let xpEarned = 0
+        if (executionResult.accepted) {
+            // Award XP based on difficulty
+            const xpMap = { Easy: 10, Medium: 20, Hard: 30 }
+            xpEarned = xpMap[problem.difficulty] || 10
+
+            // Update user progress to solved
+            userProgress.status = 'solved'
+            if (!userProgress.solvedDate) {
+                userProgress.solvedDate = new Date()
+            }
+
+            // Update problem statistics
+            problem.totalAccepted += 1
+            problem.totalSubmissions += 1
+            problem.acceptance = (problem.totalAccepted / problem.totalSubmissions) * 100
+            await problem.save()
+        } else {
+            // Update total submissions even for failed attempts
+            problem.totalSubmissions += 1
+            problem.acceptance = (problem.totalAccepted / problem.totalSubmissions) * 100
+            await problem.save()
+        }
+
+        // Create submission record
         const submission = new Submission({
             user: req.user._id,
             problemType: 'dsa',
@@ -212,26 +390,48 @@ export const submitDSASolution = async (req, res) => {
             code,
             language,
             attemptNumber: userProgress.totalAttempts,
-            status: 'pending',
+            status: submissionStatus,
+            testResults: executionResult.testResults,
+            totalTestCases: executionResult.totalTestCases,
+            passedTestCases: executionResult.passedTestCases,
+            executionTime: executionResult.executionTime,
+            memoryUsed: executionResult.memoryUsed,
+            isAccepted: executionResult.accepted,
+            xpEarned,
         })
 
         await submission.save()
-
-        // TODO: Integrate with code execution engine (Judge0 or custom)
-        // For now, we'll simulate execution
-        // In production, this would be handled by a queue/worker
+        await userProgress.save()
 
         res.json({
             success: true,
-            message: 'Solution submitted successfully',
+            message: executionResult.accepted ? 'All test cases passed!' : 'Some test cases failed',
             data: {
                 submissionId: submission._id,
-                status: submission.status,
+                status: submissionStatus,
+                accepted: executionResult.accepted,
+                totalTestCases: executionResult.totalTestCases,
+                passedTestCases: executionResult.passedTestCases,
+                testResults: executionResult.testResults.map((r) => ({
+                    ...r,
+                    // Hide input/output for hidden test cases in response
+                    input: problem.testCases.find((tc) => tc._id?.toString() === r.testCaseId?.toString())?.isHidden
+                        ? '[Hidden]'
+                        : r.input,
+                    expectedOutput: problem.testCases.find((tc) => tc._id?.toString() === r.testCaseId?.toString())
+                        ?.isHidden
+                        ? '[Hidden]'
+                        : r.expectedOutput,
+                    actualOutput: problem.testCases.find((tc) => tc._id?.toString() === r.testCaseId?.toString())
+                        ?.isHidden
+                        ? '[Hidden]'
+                        : r.actualOutput,
+                })),
+                executionTime: executionResult.executionTime,
+                memoryUsed: executionResult.memoryUsed,
+                xpEarned,
             },
         })
-
-        // Save progress asynchronously
-        userProgress.save()
     } catch (error) {
         console.error('Error submitting solution:', error)
         res.status(500).json({

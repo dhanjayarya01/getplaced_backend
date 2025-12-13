@@ -34,9 +34,22 @@ const submissionSchema = new mongoose.Schema(
         // Execution results
         status: {
             type: String,
-            enum: ['pending', 'running', 'accepted', 'wrong-answer', 'runtime-error', 'time-limit-exceeded', 'compilation-error'],
+            enum: [
+                'pending',
+                'running',
+                'accepted',
+                'wrong-answer',
+                'runtime-error',
+                'time-limit-exceeded',
+                'compilation-error',
+                'memory-limit-exceeded',
+            ],
             default: 'pending',
         },
+
+        // Judge0 specific
+        judge0Token: String, // Track Judge0 submission token for debugging
+        compilationError: String, // Store compilation error messages
 
         testResults: [
             {
@@ -45,9 +58,10 @@ const submissionSchema = new mongoose.Schema(
                 expectedOutput: String,
                 actualOutput: String,
                 passed: Boolean,
-                executionTime: Number, // in ms
+                executionTime: Number, // in seconds
                 memory: Number, // in KB
                 error: String,
+                status: String, // Judge0 status for this test case
             },
         ],
 

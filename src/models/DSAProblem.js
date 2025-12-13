@@ -107,6 +107,16 @@ const dsaProblemSchema = new mongoose.Schema(
             },
         ],
 
+        // Execution Constraints
+        timeLimit: {
+            type: Number,
+            default: 5, // Time limit in seconds
+        },
+        memoryLimit: {
+            type: Number,
+            default: 256000, // Memory limit in KB (256 MB)
+        },
+
         // Metadata
         companies: [String], // Companies that asked this question
         acceptance: {

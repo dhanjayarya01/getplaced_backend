@@ -2,6 +2,7 @@ import express from 'express'
 import {
     getAllDSAProblems,
     getDSAProblem,
+    runDSACode,
     submitDSASolution,
     getSubmissionResult,
     getDSAStats,
@@ -19,7 +20,8 @@ router.get('/stats', authenticateUser, getDSAStats)
 router.get('/:id', getDSAProblem)
 
 // Protected routes
-router.post('/:id/submit', authenticateUser, submitDSASolution)
+router.post('/:id/run', authenticateUser, runDSACode) // Run visible test cases only
+router.post('/:id/submit', authenticateUser, submitDSASolution) // Submit all test cases
 router.get('/submission/:submissionId', authenticateUser, getSubmissionResult)
 
 // Admin routes
