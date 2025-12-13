@@ -7,9 +7,20 @@ export const googleAuth = passport.authenticate('google', {
 
 // Controller for Google OAuth callback
 export const googleAuthCallback = (req, res, next) => {
-    passport.authenticate('google', {
-        failureRedirect: `${process.env.FRONTEND_URL}/auth/login-failed`,
-        successRedirect: `${process.env.FRONTEND_URL}/auth/callback`,
+    passport.authenticate('google', (err, user) => {
+        if (err || !user) {
+            return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`)
+        }
+
+        // ✅ CRITICAL: Call req.logIn() to create and persist session
+        req.logIn(user, (err) => {
+            if (err) {
+                return res.redirect(`${process.env.FRONTEND_URL}/login?error=session_failed`)
+            }
+
+            // ✅ SESSION IS CREATED HERE
+            res.redirect(`${process.env.FRONTEND_URL}/dashboard`)
+        })
     })(req, res, next)
 }
 
@@ -58,7 +69,7 @@ export const logout = (req, res) => {
                     message: 'Error destroying session',
                 })
             }
-            res.clearCookie('connect.sid')
+            res.clearCookie('getplaced.sid')
             res.json({
                 success: true,
                 message: 'Logged out successfully',
