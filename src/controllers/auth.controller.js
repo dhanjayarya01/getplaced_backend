@@ -40,8 +40,10 @@ export const googleAuthCallback = (req, res, next) => {
                 
                 console.log('✅ Session saved successfully')
                 console.log('✅ Redirecting to:', `${process.env.FRONTEND_URL}/auth/callback`)
+                console.log('✅ Response headers will include Set-Cookie for getplaced.sid')
                 
                 // Redirect to callback page so frontend can verify session
+                // express-session will automatically set the cookie in the redirect response
                 res.redirect(`${process.env.FRONTEND_URL}/auth/callback`)
             })
         })
