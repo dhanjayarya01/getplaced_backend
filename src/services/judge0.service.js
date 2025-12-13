@@ -10,6 +10,7 @@ const LANGUAGE_IDS = {
     python: 71, // Python 3
     java: 62, // Java
     cpp: 54, // C++ (GCC)
+    c: 50, // C (GCC)
     typescript: 74, // TypeScript
 }
 

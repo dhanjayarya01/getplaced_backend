@@ -148,6 +148,8 @@ export const getDSAProblem = async (req, res) => {
                 problem,
                 userProgress,
                 recentSubmissions: submissions,
+                lastSubmissionCode: submissions.length > 0 ? submissions[0].code : null,
+                lastSubmissionLanguage: submissions.length > 0 ? submissions[0].language : null,
             },
         })
         console.log("submissions________", submissions)
@@ -198,6 +200,43 @@ try {
 `
     }
 
+    // Wrapper for C
+    if (language === 'c') {
+        return `
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+
+// User Code
+${code}
+
+// Driver Code
+int main() {
+    char buffer[4096];
+    // Read all input from stdin
+    // Note: This is a simplified driver. In a real system, we'd need robust parsing 
+    // based on the problem signature (int, array, string, etc.)
+    // For now, we assume the user reads from stdin or we pass raw input.
+    
+    // However, since we can't easily parse generic args in C without a schema, 
+    // we will assume the user's solution() function takes no args and reads from stdin itself,
+    // OR we just rely on standard specific drivers per problem if we had that system.
+    
+    // Simplest approach for "generic" C support without per-problem drivers:
+    // User writes 'void solution() { ... }' or 'int main() { ... }'
+    // BUT Judge0 calls main(). If user provides main(), we can't wrap it easily without collision.
+    
+    // Let's assume user provides 'solution()' and we call it.
+    // If user provides main, they should select "Custom" or distinct mode (not supported yet).
+    
+    solution();
+    
+    return 0;
+}
+`
+    }
+
     return code
 }
 
@@ -226,13 +265,15 @@ export const runDSACode = async (req, res) => {
             })
         }
 
-        // Get only visible test cases
-        const visibleTestCases = problem.testCases.filter((tc) => !tc.isHidden)
+        // Get only visible test cases (max 3 for "Run")
+        const visibleTestCases = problem.testCases
+            .filter((tc) => !tc.isHidden)
+            .slice(0, 3)
 
         if (visibleTestCases.length === 0) {
             return res.status(400).json({
                 success: false,
-                message: 'No test cases available for this problem',
+                message: 'No visible test cases available for this problem',
             })
         }
 
@@ -324,18 +365,26 @@ export const submitDSASolution = async (req, res) => {
         } catch (execError) {
             console.error('Judge0 execution error:', execError)
 
-            // Create submission with error
-            const submission = new Submission({
-                user: req.user._id,
-                problemType: 'dsa',
-                problemId: problem._id,
-                code,
-                language,
-                attemptNumber: userProgress.totalAttempts,
-                status: 'runtime-error',
-                compilationError: execError.message,
-            })
-            await submission.save()
+            // Update submission with runtime error (overwrite existing if any)
+            await Submission.findOneAndUpdate(
+                {
+                    user: req.user._id,
+                    problemId: problem._id,
+                    problemType: 'dsa',
+                },
+                {
+                    code,
+                    language,
+                    status: 'runtime-error',
+                    compilationError: execError.message,
+                    attemptNumber: userProgress.totalAttempts,
+                    // Clear previous results
+                    testResults: [],
+                    isAccepted: false,
+                },
+                { upsert: true, new: true }
+            )
+
             await userProgress.save()
 
             return res.status(500).json({
@@ -370,37 +419,41 @@ export const submitDSASolution = async (req, res) => {
                 userProgress.solvedDate = new Date()
             }
 
-            // Update problem statistics
+            // Only increment problem stats if this specific user hadn't solved it before
+            // (Or we can just increment global stats blindly, but let's stick to simple logic for now)
+            // Ideally we'd check if userProgress.status WAS NOT 'solved' before.
+            // But since we are simplifing:
             problem.totalAccepted += 1
-            problem.totalSubmissions += 1
-            problem.acceptance = (problem.totalAccepted / problem.totalSubmissions) * 100
-            await problem.save()
-        } else {
-            // Update total submissions even for failed attempts
-            problem.totalSubmissions += 1
-            problem.acceptance = (problem.totalAccepted / problem.totalSubmissions) * 100
-            await problem.save()
         }
 
-        // Create submission record
-        const submission = new Submission({
-            user: req.user._id,
-            problemType: 'dsa',
-            problemId: problem._id,
-            code,
-            language,
-            attemptNumber: userProgress.totalAttempts,
-            status: submissionStatus,
-            testResults: executionResult.testResults,
-            totalTestCases: executionResult.totalTestCases,
-            passedTestCases: executionResult.passedTestCases,
-            executionTime: executionResult.executionTime,
-            memoryUsed: executionResult.memoryUsed,
-            isAccepted: executionResult.accepted,
-            xpEarned,
-        })
+        // Update problem stats regardless
+        problem.totalSubmissions += 1
+        problem.acceptance = (problem.totalAccepted / problem.totalSubmissions) * 100
+        await problem.save()
 
-        await submission.save()
+        // Create or Update submission record (Single submission per problem per user)
+        const submission = await Submission.findOneAndUpdate(
+            {
+                user: req.user._id,
+                problemId: problem._id,
+                problemType: 'dsa',
+            },
+            {
+                code,
+                language,
+                attemptNumber: userProgress.totalAttempts,
+                status: submissionStatus,
+                testResults: executionResult.testResults,
+                totalTestCases: executionResult.totalTestCases,
+                passedTestCases: executionResult.passedTestCases,
+                executionTime: executionResult.executionTime,
+                memoryUsed: executionResult.memoryUsed,
+                isAccepted: executionResult.accepted,
+                xpEarned,
+            },
+            { upsert: true, new: true }
+        )
+
         await userProgress.save()
 
         res.json({

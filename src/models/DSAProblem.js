@@ -88,6 +88,7 @@ const dsaProblemSchema = new mongoose.Schema(
             python: String,
             java: String,
             cpp: String,
+            c: String,
         },
 
         // Solution & Testing
