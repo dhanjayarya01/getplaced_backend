@@ -20,6 +20,9 @@ connectDB()
 // Configure Passport
 configurePassport()
 
+// Trust proxy to allow secure cookies behind load balancer (e.g. DigitalOcean)
+app.set('trust proxy', 1)
+
 // Middleware
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
