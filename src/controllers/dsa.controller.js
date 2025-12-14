@@ -9,7 +9,7 @@ export const getAllDSAProblems = async (req, res) => {
             difficulty,
             dataStructure,
             pattern,
-            company,
+            // company removed
             status,
             page = 1,
             limit = 20,
@@ -31,10 +31,6 @@ export const getAllDSAProblems = async (req, res) => {
         if (pattern) {
             const patterns = pattern.split(',')
             query.patterns = patterns.length > 1 ? { $in: patterns } : pattern
-        }
-
-        if (company) {
-            query.companies = company
         }
 
         // If user is authenticated, get their progress

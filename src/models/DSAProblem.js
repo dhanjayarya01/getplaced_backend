@@ -200,7 +200,6 @@ const dsaProblemSchema = new mongoose.Schema(
         },
 
         // Metadata
-        companies: [String], // Companies that asked this question
         acceptance: {
             type: Number,
             min: 0,
@@ -243,7 +242,6 @@ dsaProblemSchema.index({ slug: 1 })
 dsaProblemSchema.index({ difficulty: 1 })
 dsaProblemSchema.index({ dataStructures: 1 })
 dsaProblemSchema.index({ patterns: 1 })
-dsaProblemSchema.index({ companies: 1 })
 
 const DSAProblem = mongoose.model('DSAProblem', dsaProblemSchema)
 
