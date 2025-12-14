@@ -59,7 +59,7 @@ export const generatePythonWrapper = (problem, userCode) => {
     let functionCall;
 
     if (isClassMethod) {
-        functionCall = `sol = Solution()\n    result = sol.${fn}(${callArgsStr})`;
+        functionCall = `sol = Solution()\n        result = sol.${fn}(${callArgsStr})`;
     } else {
         functionCall = `result = ${fn}(${callArgsStr})`;
     }
