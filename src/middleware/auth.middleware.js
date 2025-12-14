@@ -1,15 +1,7 @@
 // Middleware to check if user is authenticated (supports both session and JWT)
 export const authenticateUser = (req, res, next) => {
-    // Debug logging
-    console.log('🔍 authenticateUser middleware called')
-    console.log('🔍 Session ID:', req.sessionID)
-    console.log('🔍 Cookies in request:', req.headers.cookie || 'NO COOKIES')
-    console.log('🔍 Is authenticated:', req.isAuthenticated?.())
-    console.log('🔍 User exists:', !!req.user)
-    
     // Check if user is authenticated via session (Passport)
     if (req.isAuthenticated && req.isAuthenticated()) {
-        console.log('✅ User is authenticated, proceeding')
         return next()
     }
 

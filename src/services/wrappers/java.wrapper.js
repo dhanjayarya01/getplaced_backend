@@ -11,108 +11,233 @@ export const generateJavaWrapper = (problem, userCode) => {
     const params = metadata.parameters || [];
     const returnType = metadata.returnType || {};
 
-    if (!fn) {
-        return userCode;
+    if (!fn) return userCode;
+
+    // Detect Usage
+    const allTypes = [...params.map(p => p.type), returnType.type].filter(Boolean).join(' ');
+    const usesListNode = allTypes.includes('ListNode');
+    const usesTreeNode = allTypes.includes('TreeNode');
+
+
+
+    const imports = `
+import java.util.*;
+import java.io.*;
+import java.util.stream.Collectors;
+`;
+
+    const definitions = `
+// --- Definitions ---
+class ListNode {
+    int val;
+    ListNode next;
+    ListNode() {}
+    ListNode(int val) { this.val = val; }
+    ListNode(int val, ListNode next) { this.val = val; this.next = next; }
+}
+
+class TreeNode {
+    int val;
+    TreeNode left;
+    TreeNode right;
+    TreeNode() {}
+    TreeNode(int val) { this.val = val; }
+    TreeNode(int val, TreeNode left, TreeNode right) {
+        this.val = val;
+        this.left = left;
+        this.right = right;
+    }
+}
+`;
+
+    const mainClassStart = `
+public class Main {
+    // --- Helpers ---
+    private static int[] stringToIntArray(String input) {
+        input = input.trim();
+        if(input.equals("[]")) return new int[0];
+        if(input.startsWith("[")) input = input.substring(1, input.length()-1);
+        if(input.isEmpty()) return new int[0];
+        
+        String[] parts = input.split(",");
+        int[] res = new int[parts.length];
+        for(int i=0; i<parts.length; i++) {
+            try {
+                res[i] = Integer.parseInt(parts[i].trim());
+            } catch(NumberFormatException e) {
+                res[i] = 0; // Fallback
+            }
+        }
+        return res;
     }
 
+    private static ListNode stringToListNode(String input) {
+        int[] arr = stringToIntArray(input);
+        if(arr.length == 0) return null;
+        ListNode head = new ListNode(arr[0]);
+        ListNode curr = head;
+        for(int i=1; i<arr.length; i++) {
+            curr.next = new ListNode(arr[i]);
+            curr = curr.next;
+        }
+        return head;
+    }
+
+    private static TreeNode stringToTreeNode(String input) {
+        input = input.trim();
+        if(input.equals("[]") || input.equals("null")) return null;
+        if(input.startsWith("[")) input = input.substring(1, input.length()-1);
+        if(input.isEmpty()) return null;
+
+        String[] parts = input.split(",");
+        if(parts.length == 0 || parts[0].trim().equals("null")) return null;
+
+        TreeNode root = new TreeNode(Integer.parseInt(parts[0].trim()));
+        Queue<TreeNode> queue = new LinkedList<>();
+        queue.add(root);
+
+        int i = 1;
+        while(!queue.isEmpty() && i < parts.length) {
+            TreeNode curr = queue.poll();
+
+            // Left
+            if(i < parts.length) {
+                String val = parts[i].trim();
+                if(!val.equals("null")) {
+                    curr.left = new TreeNode(Integer.parseInt(val));
+                    queue.add(curr.left);
+                }
+                i++;
+            }
+
+            // Right
+            if(i < parts.length) {
+                String val = parts[i].trim();
+                if(!val.equals("null")) {
+                    curr.right = new TreeNode(Integer.parseInt(val));
+                    queue.add(curr.right);
+                }
+                i++;
+            }
+        }
+        return root;
+    }
+
+    private static void printListNode(ListNode head) {
+        System.out.print("[");
+        ListNode curr = head;
+        while(curr != null) {
+            System.out.print(curr.val);
+            if(curr.next != null) System.out.print(",");
+            curr = curr.next;
+        }
+        System.out.println("]");
+    }
+
+    private static void printTreeNode(TreeNode root) {
+        if(root == null) { System.out.println("[]"); return; }
+        List<String> res = new ArrayList<>();
+        Queue<TreeNode> q = new LinkedList<>();
+        q.add(root);
+        
+        while(!q.isEmpty()) {
+            TreeNode curr = q.poll();
+            if(curr == null) res.add("null");
+            else {
+                res.add(String.valueOf(curr.val));
+                q.add(curr.left);
+                q.add(curr.right);
+            }
+        }
+        
+        // Trim trailing nulls
+        int i = res.size() - 1;
+        while(i >= 0 && res.get(i).equals("null")) {
+            res.remove(i);
+            i--;
+        }
+
+        System.out.print("[");
+        for(int j=0; j<res.size(); j++) {
+            System.out.print(res.get(j));
+            if(j < res.size()-1) System.out.print(",");
+        }
+        System.out.println("]");
+    }
+
+    public static void main(String[] args) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+`;
+
+    // Parsing Logic
     let parseCode = "";
     let callArgs = [];
-    let imports = new Set(["java.util.*", "java.io.*", "java.lang.*"]);
 
     params.forEach((param) => {
         const { name, type } = param;
+        parseCode += `        String raw_${name} = reader.readLine();\n        if(raw_${name} == null) return;\n`;
 
-        if (type === 'int') {
-            parseCode += `        int ${name} = Integer.parseInt(reader.readLine().trim());\n`;
-        }
-        else if (type === 'long') {
-            parseCode += `        long ${name} = Long.parseLong(reader.readLine().trim());\n`;
-        }
-        else if (type === 'double') {
-            parseCode += `        double ${name} = Double.parseDouble(reader.readLine().trim());\n`;
-        }
-        else if (type === 'boolean') {
-            parseCode += `        boolean ${name} = Boolean.parseBoolean(reader.readLine().trim());\n`;
-        }
-        else if (type === 'String') {
-            parseCode += `        String ${name} = reader.readLine().trim();\n`;
-            // Remove quotes if they exist in input? usually CP input is raw chars for string
-            // But if input is "hello" (with quotes), we might need to strip. 
-            // Standardizing on: Strings come as raw text.
-        }
-        else if (type === 'int[]') {
-            parseCode += `        String ${name}Raw = reader.readLine().trim();\n`;
-            // Expecting [1,2,3] format
-            parseCode += `        ${name}Raw = ${name}Raw.substring(1, ${name}Raw.length() - 1);\n`;
-            parseCode += `        String[] ${name}Parts = ${name}Raw.split(",");\n`;
-            parseCode += `        int[] ${name} = new int[${name}Parts.length];\n`;
-            parseCode += `        for(int i=0; i<${name}Parts.length; i++) {\n`;
-            parseCode += `            if(!${name}Parts[i].trim().isEmpty()) ${name}[i] = Integer.parseInt(${name}Parts[i].trim());\n`;
-            parseCode += `        }\n`;
-        }
-        else if (type === 'List<Integer>' || type === 'ArrayList<Integer>') {
-            parseCode += `        String ${name}Raw = reader.readLine().trim();\n`;
-            parseCode += `        ${name}Raw = ${name}Raw.substring(1, ${name}Raw.length() - 1);\n`;
-            parseCode += `        String[] ${name}Parts = ${name}Raw.split(",");\n`;
+        if (type.includes('ListNode')) {
+            parseCode += `        ListNode ${name} = stringToListNode(raw_${name});\n`;
+            callArgs.push(name);
+        } else if (type.includes('TreeNode')) {
+            parseCode += `        TreeNode ${name} = stringToTreeNode(raw_${name});\n`;
+            callArgs.push(name);
+        } else if (type === 'int[]') {
+            parseCode += `        int[] ${name} = stringToIntArray(raw_${name});\n`;
+            callArgs.push(name);
+        } else if (type === 'int') {
+            // Safe parse
+            parseCode += `        int ${name} = 0;\n`;
+            parseCode += `        try { ${name} = Integer.parseInt(raw_${name}.trim()); } catch(Exception e) {}\n`;
+            callArgs.push(name);
+        } else if (type === 'String') {
+            parseCode += `        String ${name} = raw_${name};\n`;
+            callArgs.push(name);
+        } else if (type.includes('List<Integer>')) {
+            parseCode += `        int[] arr_${name} = stringToIntArray(raw_${name});\n`;
             parseCode += `        List<Integer> ${name} = new ArrayList<>();\n`;
-            parseCode += `        for(String part : ${name}Parts) {\n`;
-            parseCode += `             if(!part.trim().isEmpty()) ${name}.add(Integer.parseInt(part.trim()));\n`;
-            parseCode += `        }\n`;
+            parseCode += `        for(int val : arr_${name}) ${name}.add(val);\n`;
+            callArgs.push(name);
+        } else {
+            // Fallback
+            parseCode += `        // Unknown type ${type}\n`;
         }
-        // Add more types as needed
-        else {
-            parseCode += `        // TODO: Parse complex type ${type} for ${name}\n`;
-            parseCode += `        ${type} ${name} = null;\n`;
-        }
-
-        callArgs.push(name);
     });
 
     const callArgsStr = callArgs.join(', ');
     const retType = returnType.type || 'void';
 
-    // Determine if user code has 'class Solution'
     const isSolutionClass = userCode.includes('class Solution');
-
-    let functionCall;
-    if (isSolutionClass) {
-        functionCall = `Solution sol = new Solution();\n        ${retType} result = sol.${fn}(${callArgsStr});`;
-    } else {
-        // specific static method or different class logic
-        functionCall = `${retType} result = ${fn}(${callArgsStr});`;
-    }
+    const functionCall = isSolutionClass
+        ? `        Solution sol = new Solution();\n        ${retType} result = sol.${fn}(${callArgsStr});`
+        : `        ${retType} result = ${fn}(${callArgsStr});`;
 
     let printCode = "";
-    if (retType === 'void') {
-        printCode = "";
+    if (retType.includes('ListNode')) {
+        printCode = `        printListNode(result);`;
+    } else if (retType.includes('TreeNode')) {
+        printCode = `        printTreeNode(result);`;
     } else if (retType === 'int[]') {
-        printCode = `System.out.print("[");\n        for(int i=0; i<result.length; i++) {\n            System.out.print(result[i]);\n            if(i<result.length-1) System.out.print(",");\n        }\n        System.out.println("]");`;
-    } else if (retType === 'List<Integer>' || retType === 'ArrayList<Integer>') {
-        printCode = `System.out.print("[");\n        for(int i=0; i<result.size(); i++) {\n            System.out.print(result.get(i));\n            if(i<result.size()-1) System.out.print(",");\n        }\n        System.out.println("]");`;
+        printCode = `        System.out.print("[");
+        for(int i=0; i<result.length; i++) {
+            System.out.print(result[i]);
+            if(i<result.length-1) System.out.print(",");
+        }
+        System.out.println("]");`;
     } else {
-        printCode = `System.out.println(result);`;
+        printCode = `        System.out.println(result);`;
     }
 
-    // Wrap in Main class
-    // User code is usually "class Solution { ... }"
-    // We need "import java.util.*; ... userCode ... public class Main { ... }"
+    // Clean user code: remove 'public' from 'public class Solution' to avoid collision
+    const sanitizedUserCode = userCode.replace(/public\s+class\s+Solution/g, 'class Solution');
 
-    const importsStr = Array.from(imports).map(i => `import ${i};`).join('\n');
+    return `${imports}
+${definitions}
 
-    // If user code has imports, they must be at the top. 
-    // But since we can't easily parse them out, we assume user code contains "import ...;" or "class Solution ..."
-    // A primitive heuristic: check if userCode starts with import. 
-    // Actually, simpler: Just prepend our imports. Java allows multiple imports of same package.
-    // However, if user puts 'package x;' that must be first. DSA solutions usually don't have package.
+${sanitizedUserCode}
 
-    return `${importsStr}
-
-${userCode}
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        
+${mainClassStart}
 ${parseCode}
         ${functionCall}
         ${printCode}

@@ -68,6 +68,11 @@ const dsaProblemSchema = new mongoose.Schema(
                     'Sorting',
                     'Bit Manipulation',
                     'Math',
+                    'Stack',
+                    'Queue',
+                    'Heap',
+                    'Graph',
+                    'Design'
                 ],
             },
         ],

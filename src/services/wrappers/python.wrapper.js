@@ -6,86 +6,158 @@
  * @returns {string} - Complete Python program
  */
 export const generatePythonWrapper = (problem, userCode) => {
-    // metadata is now in problem.pythonMetadata
     const metadata = problem.pythonMetadata || {};
     const fn = metadata.functionName;
     const params = metadata.parameters || [];
     const returnType = metadata.returnType || {};
 
-    // If no specific metadata, check if we can fallback or just return user code
-    // Ideally we should enforce metadata for auto-generation.
-    if (!fn) {
-        return userCode;
-    }
+    if (!fn) return userCode; // Fallback
 
+    // Detect Types Used
+    const allTypes = [...params.map(p => p.type), returnType.type].filter(Boolean).join(' ');
+    const usesListNode = allTypes.includes('ListNode');
+    const usesTreeNode = allTypes.includes('TreeNode');
+
+    // Helper Functions
+    const headerCode = `
+import json
+import sys
+from typing import List, Optional, Dict, Set, Tuple
+
+# Standard Definition for singly-linked list.
+class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+
+# Standard Definition for a binary tree node.
+class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+# Helpers for Deserialization
+def to_linked_list(arr):
+    if not arr: return None
+    head = ListNode(arr[0])
+    curr = head
+    for i in range(1, len(arr)):
+        curr.next = ListNode(arr[i])
+        curr = curr.next
+    return head
+
+def to_binary_tree(arr):
+    if not arr: return None
+    if not arr[0] and arr[0] != 0: return None # Handle [null] case specific to LeetCode format if needed? usually [None]
+    
+    root = TreeNode(arr[0])
+    queue = [root]
+    i = 1
+    while queue and i < len(arr):
+        node = queue.pop(0)
+        
+        # Left child
+        if i < len(arr) and arr[i] is not None:
+            node.left = TreeNode(arr[i])
+            queue.append(node.left)
+        i += 1
+        
+        # Right child
+        if i < len(arr) and arr[i] is not None:
+            node.right = TreeNode(arr[i])
+            queue.append(node.right)
+        i += 1
+    return root
+
+# Helpers for Serialization
+def list_node_to_array(head):
+    arr = []
+    curr = head
+    while curr:
+        arr.append(curr.val)
+        curr = curr.next
+    return arr
+
+def tree_node_to_array(root):
+    if not root: return []
+    output = []
+    queue = [root]
+    while queue:
+        node = queue.pop(0)
+        if node:
+            output.append(node.val)
+            queue.append(node.left)
+            queue.append(node.right)
+        else:
+            output.append(None)
+    # Trim trailing Nones
+    while output and output[-1] is None:
+        output.pop()
+    return output
+`;
+
+    // Generate Input Parsing
     let parseCode = "";
     let callArgs = [];
 
     params.forEach((param) => {
         const { name, type } = param;
 
-        if (type === 'int') {
-            parseCode += `${name} = int(input().strip())\n`;
-        }
-        else if (type === 'float') {
-            parseCode += `${name} = float(input().strip())\n`;
-        }
-        else if (type === 'str') {
-            parseCode += `${name} = input().strip()\n`;
-        }
-        else if (type === 'bool') {
-            // Python's bool(input()) is always True if string is not empty, so we might need better parsing
-            // Assuming "true"/"false" strings or 0/1, or just standard eval for safety in CP context often eval is used or json.loads
-            // For now let's stick to safe-ish eval or json
-            parseCode += `${name} = input().strip().lower() == 'true'\n`;
-        }
-        else if (type === 'List[int]' || type === 'List[float]' || type === 'List[str]') {
-            parseCode += `import json\n`;
-            parseCode += `${name} = json.loads(input().strip())  # Expecting JSON array format e.g. [1, 2]\n`;
-        }
-        else {
-            // Fallback to eval or string
-            parseCode += `${name} = eval(input().strip()) # Fallback for ${type}\n`;
+        // 1. Read JSON Line
+        const rawVar = `raw_${name}`;
+        parseCode += `        ${rawVar} = json.loads(input().strip())\n`;
+
+        // 2. Convert if necessary
+        if (type.includes('ListNode')) {
+            parseCode += `        ${name} = to_linked_list(${rawVar})\n`;
+        } else if (type.includes('TreeNode')) {
+            parseCode += `        ${name} = to_binary_tree(${rawVar})\n`;
+        } else {
+            // Primitives, Lists, Dicts - handled directly by json.loads
+            parseCode += `        ${name} = ${rawVar}\n`;
         }
         callArgs.push(name);
     });
 
     const callArgsStr = callArgs.join(', ');
 
-
-    // Check for class method
-    // Robust detection for class Solution
+    // Call User Function
     const isClassMethod = /class\s+Solution/.test(userCode);
     let functionCall;
-
     if (isClassMethod) {
-        functionCall = `sol = Solution()\n        result = sol.${fn}(${callArgsStr})`;
+        functionCall = `        sol = Solution()\n        result = sol.${fn}(${callArgsStr})`;
     } else {
-        functionCall = `result = ${fn}(${callArgsStr})`;
+        functionCall = `        result = ${fn}(${callArgsStr})`;
     }
 
-
-    let printCode = `print(result)`;
+    // Output Formatting
+    let printCode = "";
     const rType = returnType.type;
 
-    if (rType && (rType.startsWith('List') || rType === 'dict')) {
-        // Print as JSON string for consistency
-        printCode = `import json\n        print(json.dumps(result, separators=(',', ':')))`;
+    if (rType && rType.includes('ListNode')) {
+        printCode = `        out_arr = list_node_to_array(result)\n        print(json.dumps(out_arr, separators=(',', ':')))`;
+    } else if (rType && rType.includes('TreeNode')) {
+        printCode = `        out_arr = tree_node_to_array(result)\n        print(json.dumps(out_arr, separators=(',', ':')))`;
+    } else {
+        // Default JSON dump for primitives/lists
+        printCode = `        print(json.dumps(result, separators=(',', ':')))`;
     }
 
-    // Add explicit flush
-    printCode += `\n        import sys\n        sys.stdout.flush()`;
+    // Explicit flush
+    printCode += `\n        sys.stdout.flush()`;
 
-    return `${userCode}
+    return `${headerCode}
+
+${userCode}
 
 if __name__ == "__main__":
     try:
-${parseCode.trim().split('\n').map(line => '        ' + line).join('\n')}
-        ${functionCall}
-        ${printCode}
+${parseCode}
+${functionCall}
+${printCode}
     except Exception as e:
-        import sys
-        # print(f"Error: {e}", file=sys.stderr)
+        sys.stderr.write(f"Runtime Error: {str(e)}")
         raise e
 `;
 };
