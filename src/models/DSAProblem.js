@@ -222,6 +222,14 @@ const dsaProblemSchema = new mongoose.Schema(
             },
         ],
 
+        // Linked Companies
+        companies: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Company',
+            },
+        ],
+
         // Status
         isActive: {
             type: Boolean,

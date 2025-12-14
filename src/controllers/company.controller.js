@@ -487,6 +487,13 @@ export const linkDSAProblem = async (req, res) => {
             { new: true }
         ).populate('linkedDSAProblems.problem')
 
+        // Sync: Add company to DSA problem's companies list
+        if (company) {
+            await DSAProblem.findByIdAndUpdate(problemId, {
+                $addToSet: { companies: company._id }
+            })
+        }
+
         if (!company) {
             return res.status(404).json({
                 success: false,
@@ -510,10 +517,27 @@ export const linkDSAProblem = async (req, res) => {
 }
 
 // Admin: Unlink DSA problem from company
+// Admin: Unlink DSA problem from company
 export const unlinkDSAProblem = async (req, res) => {
     try {
         const { id, linkId } = req.params
 
+        // 1. Find company and the specific linked problem subdoc to get the problemId
+        const companyForUnlink = await Company.findOne(
+            { _id: id, 'linkedDSAProblems._id': linkId },
+            { 'linkedDSAProblems.$': 1 }
+        )
+
+        if (!companyForUnlink || companyForUnlink.linkedDSAProblems.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Link not found',
+            })
+        }
+
+        const problemId = companyForUnlink.linkedDSAProblems[0].problem
+
+        // 2. Remove from Company
         const company = await Company.findByIdAndUpdate(
             id,
             {
@@ -523,6 +547,13 @@ export const unlinkDSAProblem = async (req, res) => {
             },
             { new: true }
         )
+
+        // 3. Remove from DSA Problem
+        if (problemId) {
+            await DSAProblem.findByIdAndUpdate(problemId, {
+                $pull: { companies: id }
+            })
+        }
 
         if (!company) {
             return res.status(404).json({

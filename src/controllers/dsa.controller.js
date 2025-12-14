@@ -54,6 +54,7 @@ export const getAllDSAProblems = async (req, res) => {
 
         const problems = await DSAProblem.find(query)
             .select('-solution -testCases') // Don't send solution and hidden test cases
+            .populate('companies', 'name slug')
             .sort(sort)
             .skip(skip)
             .limit(parseInt(limit))
@@ -110,7 +111,9 @@ export const getDSAProblem = async (req, res) => {
             query.slug = id
         }
 
-        const problem = await DSAProblem.findOne(query).select('-solution') // Don't send solution initially
+        const problem = await DSAProblem.findOne(query)
+            .select('-solution') // Don't send solution initially
+            .populate('companies', 'name slug')
 
         if (!problem) {
             return res.status(404).json({
