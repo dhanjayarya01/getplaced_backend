@@ -7,21 +7,55 @@
  */
 export const generatePythonWrapper = (problem, userCode) => {
     const metadata = problem.pythonMetadata || {};
-    const fn = metadata.functionName;
-    const params = metadata.parameters || [];
-    const returnType = metadata.returnType || {};
+    let fn = metadata.functionName || problem.functionName;
+
+    // Fallback if metadata params are empty but problem params exist
+    let params = (metadata.parameters && metadata.parameters.length > 0)
+        ? metadata.parameters
+        : (problem.parameters || []);
+
+    // Fallback for return type if metadata is empty object
+    const returnType = (metadata.returnType && metadata.returnType.type)
+        ? metadata.returnType
+        : (problem.returnType || {}); // problem.returnType has cType
+
+    // Mapper for C types to Python types if needed
+    const mapCTypeToPython = (cType, paramName) => {
+        if (!cType) return 'int'; // default
+        if (cType.includes('ListNode')) return 'ListNode';
+        if (cType.includes('TreeNode')) return 'TreeNode';
+        if (cType.includes('int*') || cType.includes('int[]') || cType.includes('vector')) return 'List[int]';
+        if (cType.includes('char*') || cType.includes('string')) return 'str';
+        if (cType.includes('bool')) return 'bool';
+        if (cType.includes('double') || cType.includes('float')) return 'float';
+        // Check heuristics
+        if (paramName && (paramName.includes('arr') || paramName.includes('nums'))) return 'List[int]';
+        return 'int';
+    };
+
+    // Normalize parameters
+    params = params.map(p => ({
+        name: p.name,
+        type: p.type || mapCTypeToPython(p.cType, p.name)
+    }));
+
+    // Normalize return type
+    const normalizedReturnType = {
+        type: returnType.type || mapCTypeToPython(returnType.cType, 'return')
+    };
 
     if (!fn) return userCode; // Fallback
 
     // Detect Types Used
-    const allTypes = [...params.map(p => p.type), returnType.type].filter(Boolean).join(' ');
+    const allTypes = [...params.map(p => p.type), normalizedReturnType.type].filter(Boolean).join(' ');
     const usesListNode = allTypes.includes('ListNode');
     const usesTreeNode = allTypes.includes('TreeNode');
 
     // Helper Functions
     const headerCode = `
-import json
 import sys
+import json
+sys.setrecursionlimit(2000)
 from typing import List, Optional, Dict, Set, Tuple
 
 # Standard Definition for singly-linked list.
@@ -133,12 +167,16 @@ def tree_node_to_array(root):
 
     // Output Formatting
     let printCode = "";
-    const rType = returnType.type;
+    const rType = normalizedReturnType.type;
 
     if (rType && rType.includes('ListNode')) {
         printCode = `        out_arr = list_node_to_array(result)\n        print(json.dumps(out_arr, separators=(',', ':')))`;
     } else if (rType && rType.includes('TreeNode')) {
         printCode = `        out_arr = tree_node_to_array(result)\n        print(json.dumps(out_arr, separators=(',', ':')))`;
+    } else if (problem.slug === 'string-compression') {
+        printCode = `        out_len = result
+        out_list = ${params[0].name}[:out_len]
+        print(f'Return {out_len}, and the first {"character" if out_len == 1 else f"{out_len} characters"} of the input array should be: {json.dumps(out_list, separators=(",", ":"))}')`;
     } else {
         // Default JSON dump for primitives/lists
         printCode = `        print(json.dumps(result, separators=(',', ':')))`;

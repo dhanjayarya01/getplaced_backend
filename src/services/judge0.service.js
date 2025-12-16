@@ -85,7 +85,7 @@ export const createSubmission = async (
         return response.data.token
     } catch (error) {
         console.error('Error creating Judge0 submission:', error.response?.data || error.message)
-        throw new Error('Failed to create submission on Judge0')
+        throw error
     }
 }
 
