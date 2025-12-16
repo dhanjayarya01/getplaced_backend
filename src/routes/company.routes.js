@@ -16,6 +16,7 @@ import {
     addInterviewQuestion,
     removeInterviewQuestion,
     getCompanyWithProblems,
+    getSuggestedCompanies,
     deleteCompany,
 } from '../controllers/company.controller.js'
 import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
@@ -24,6 +25,7 @@ const router = express.Router()
 
 // Public routes
 router.get('/', getAllCompanies)
+router.get('/suggested/list', authenticateUser, getSuggestedCompanies)
 router.get('/:id', getCompany)
 
 // Protected routes - Applications

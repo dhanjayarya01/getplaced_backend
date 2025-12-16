@@ -81,6 +81,7 @@ const dsaProblemSchema = new mongoose.Schema(
                     'Merge Sort',
                     'Quick Sort',
                     'Bit Manipulation',
+                    'Hashing',
                     'Math',
                     'Geometry',
                     'Game Theory',

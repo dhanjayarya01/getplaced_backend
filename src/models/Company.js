@@ -200,6 +200,27 @@ const companySchema = new mongoose.Schema(
         interviewTips: [String],
 
 
+        // Hiring Details
+        hiringFreshers: {
+            type: Boolean,
+            default: false,
+        },
+        experienceRequired: {
+            min: { type: Number, default: 0 },
+            max: { type: Number, default: 30 },
+        },
+
+        // Remote Work Details
+        workModes: [{
+            type: String,
+            enum: ['Remote', 'Hybrid', 'On-site'],
+        }],
+        remoteMinExperience: {
+            type: Number,
+            default: 0, // 0 implies no extra experience required for remote specific roles
+            min: 0
+        },
+
         // Status
         isActive: {
             type: Boolean,

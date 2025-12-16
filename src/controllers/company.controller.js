@@ -9,6 +9,9 @@ export const getAllCompanies = async (req, res) => {
             maxPackage,
             location,
             isHiring,
+            hiringFreshers,
+            workMode, // 'Remote', 'Hybrid', 'On-site'
+            experience,
             page = 1,
             limit = 20,
             sort = '-stats.preparing',
@@ -18,12 +21,31 @@ export const getAllCompanies = async (req, res) => {
 
         if (difficulty) query.difficulty = difficulty
         if (isHiring !== undefined) query.isHiring = isHiring === 'true'
-        if (location) query.locations = location
+        if (hiringFreshers !== undefined) query.hiringFreshers = hiringFreshers === 'true'
+        if (workMode) query.workModes = workMode // Matches if workMode is in the array
+        if (location) {
+            // Case insensitive search for location
+            query.locations = { $regex: new RegExp(location, 'i') }
+        }
+
+        // Filter by user's experience (e.g. if user has 2 years, find companies where min <= 2 <= max)
+        if (experience) {
+            const expYear = parseFloat(experience)
+            if (!isNaN(expYear)) {
+                query['experienceRequired.min'] = { $lte: expYear }
+                query['experienceRequired.max'] = { $gte: expYear }
+            }
+        }
 
         if (minPackage || maxPackage) {
             query['averagePackage.min'] = {}
             if (minPackage) query['averagePackage.min'].$gte = parseInt(minPackage)
             if (maxPackage) query['averagePackage.max'].$lte = parseInt(maxPackage)
+        }
+
+        // Name Search (Optimized with Regex)
+        if (req.query.search) {
+            query.name = { $regex: new RegExp(req.query.search, 'i') }
         }
 
         const skip = (page - 1) * limit
@@ -51,6 +73,53 @@ export const getAllCompanies = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error fetching companies',
+            error: error.message,
+        })
+    }
+}
+
+// Get suggested companies for user
+export const getSuggestedCompanies = async (req, res) => {
+    try {
+        // Assume user is authenticated (middleware ensures req.user)
+        const user = await User.findById(req.user._id)
+        const query = { isActive: true }
+
+        // 1. Match Experience
+        if (user.experience) {
+            const expLower = user.experience.toLowerCase()
+            if (expLower.includes('fresher')) {
+                query.hiringFreshers = true
+            } else {
+                const match = user.experience.match(/\d+/)
+                if (match) {
+                    const exp = parseInt(match[0])
+                    // Find companies where their requirement covers user's experience
+                    query['experienceRequired.min'] = { $lte: exp }
+                    query['experienceRequired.max'] = { $gte: exp }
+                }
+            }
+        }
+
+        // 2. Fallback: If no strict criteria or user has undefined profile, show High Hiring companies
+        if (Object.keys(query).length === 1) { // Only isActive is set
+            query.isHiring = true
+        }
+
+        let companies = await Company.find(query)
+            .select('name logo slug industry difficulty averagePackage hiringFreshers experienceRequired')
+            .limit(10)
+            .sort('-isHiring -stats.totalApplicants') // Prioritize hiring & popular
+
+        res.json({
+            success: true,
+            data: companies,
+        })
+    } catch (error) {
+        console.error('Error fetching suggested companies:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching suggestions',
             error: error.message,
         })
     }
