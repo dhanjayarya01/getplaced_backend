@@ -6,19 +6,13 @@
  * @returns {string} - Complete Java program
  */
 export const generateJavaWrapper = (problem, userCode) => {
+    // Problem Metadata
+    const fn = problem.functionName; // Fallback to root function name if javaMetadata missing
     const metadata = problem.javaMetadata || {};
-    const fn = metadata.functionName;
-    const params = metadata.parameters || [];
-    const returnType = metadata.returnType || {};
+    const params = (metadata.parameters && metadata.parameters.length > 0) ? metadata.parameters : (problem.parameters || []);
+    const returnType = metadata.returnType || problem.returnType || {};
 
     if (!fn) return userCode;
-
-    // Detect Usage
-    const allTypes = [...params.map(p => p.type), returnType.type].filter(Boolean).join(' ');
-    const usesListNode = allTypes.includes('ListNode');
-    const usesTreeNode = allTypes.includes('TreeNode');
-
-
 
     const imports = `
 import java.util.*;
@@ -71,6 +65,62 @@ public class Main {
         return res;
     }
 
+    private static char[] stringToCharArray(String input) {
+        input = input.trim();
+        if(input.equals("[]")) return new char[0];
+        if(input.startsWith("[")) input = input.substring(1, input.length()-1);
+        if(input.isEmpty()) return new char[0];
+
+        // Parse ["a","b"] -> char[] {'a','b'}
+        // Simple regex split by comma, then strip quotes
+        List<Character> chars = new ArrayList<>();
+        boolean inQuote = false;
+        StringBuilder sb = new StringBuilder();
+        
+        for(char c : input.toCharArray()) {
+            if(c == '"' || c == '\\'') {
+                inQuote = !inQuote;
+            } else if (c == ',' && !inQuote) {
+                if(sb.length() > 0) chars.add(sb.charAt(0));
+                sb.setLength(0);
+            } else {
+                sb.append(c);
+            }
+        }
+        if(sb.length() > 0) chars.add(sb.charAt(0));
+        
+        char[] res = new char[chars.size()];
+        for(int i=0; i<chars.size(); i++) res[i] = chars.get(i);
+        return res;
+    }
+
+    private static int[][] stringTo2DIntArray(String input) {
+        input = input.trim();
+        if(input.equals("[]") || input.length() < 4) return new int[0][0]; // "[]" or "[[]]"
+        if(input.startsWith("[")) input = input.substring(1, input.length()-1);
+        
+        List<int[]> rows = new ArrayList<>();
+        int start = 0;
+        int brackets = 0;
+        for(int i=0; i<input.length(); i++) {
+            if(input.charAt(i) == '[') brackets++;
+            else if(input.charAt(i) == ']') brackets--;
+            
+            if(brackets == 0 && (i == input.length()-1 || input.charAt(i+1) == ',')) {
+                 // Found a row: input[start...i+1]
+                 // Strip trailing comma if needed
+                 String rowStr = input.substring(start, i+1);
+                 rows.add(stringToIntArray(rowStr));
+                 start = i + 2; // skip ],
+                 i++; 
+            }
+        }
+        
+        int[][] res = new int[rows.size()][];
+        for(int i=0; i<rows.size(); i++) res[i] = rows.get(i);
+        return res;
+    }
+
     private static ListNode stringToListNode(String input) {
         int[] arr = stringToIntArray(input);
         if(arr.length == 0) return null;
@@ -99,7 +149,7 @@ public class Main {
         int i = 1;
         while(!queue.isEmpty() && i < parts.length) {
             TreeNode curr = queue.poll();
-
+            
             // Left
             if(i < parts.length) {
                 String val = parts[i].trim();
@@ -123,6 +173,7 @@ public class Main {
         return root;
     }
 
+    // --- Printers ---
     private static void printListNode(ListNode head) {
         System.out.print("[");
         ListNode curr = head;
@@ -165,69 +216,163 @@ public class Main {
         System.out.println("]");
     }
 
+    private static void printArray(int[] arr) {
+        System.out.print("[");
+        for(int i=0; i<arr.length; i++) {
+            System.out.print(arr[i]);
+            if(i < arr.length-1) System.out.print(",");
+        }
+        System.out.println("]");
+    }
+    
+    // For String Compression
+    private static void printCharArray(char[] arr, int len) {
+        System.out.print("[");
+        for(int i=0; i<len; i++) {
+            System.out.print("\\"" + arr[i] + "\\"");
+            if(i < len - 1) System.out.print(",");
+        }
+        System.out.println("]");
+    }
+
     public static void main(String[] args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 `;
+
+    // Helper to map C/Standard types to Java types
+    const parseType = (t) => {
+        if (!t) return 'Object';
+        if (t.includes('ListNode')) return 'ListNode';
+        if (t.includes('TreeNode')) return 'TreeNode';
+        if (t === 'int**' || t === 'List<List<Integer>>' || t === 'int[][]') return 'int[][]';
+        if (t === 'int*' || t === 'int[]' || t === 'list<int>') return 'int[]';
+        if (t === 'char[]' || t === 'vector<char>') return 'char[]';
+        if (t === 'string' || t === 'char*' || t === 'String') return 'String';
+        if (t === 'char**' || t === 'string[]') return 'String[]'; // Simplified
+        if (t === 'long long') return 'long';
+        if (t === 'double' || t === 'float') return 'double';
+        if (t === 'boolean' || t === 'bool') return 'boolean';
+        return t;
+    };
 
     // Parsing Logic
     let parseCode = "";
     let callArgs = [];
 
+    // Special Case: Rearrange Words string input
+    const isRearrangeWords = problem.slug === 'rearrange-words-in-a-sentence';
+    const isStringCompression = problem.slug === 'string-compression';
+
     params.forEach((param) => {
-        const { name, type } = param;
+        const { name } = param;
+        let cType = param.type || param.cType; // Flexible property
+        let javaType = parseType(cType);
+
+        if (isStringCompression && name === 'chars') {
+            javaType = 'char[]';
+        }
+
         parseCode += `        String raw_${name} = reader.readLine();\n        if(raw_${name} == null) return;\n`;
 
-        if (type.includes('ListNode')) {
+        if (javaType === 'ListNode') {
             parseCode += `        ListNode ${name} = stringToListNode(raw_${name});\n`;
             callArgs.push(name);
-        } else if (type.includes('TreeNode')) {
+        } else if (javaType === 'TreeNode') {
             parseCode += `        TreeNode ${name} = stringToTreeNode(raw_${name});\n`;
             callArgs.push(name);
-        } else if (type === 'int[]') {
+        } else if (javaType === 'int[]') {
             parseCode += `        int[] ${name} = stringToIntArray(raw_${name});\n`;
             callArgs.push(name);
-        } else if (type === 'int') {
-            // Safe parse
+        } else if (javaType === 'char[]') {
+            parseCode += `        char[] ${name} = stringToCharArray(raw_${name});\n`;
+            callArgs.push(name);
+        } else if (javaType === 'int[][]') {
+            parseCode += `        int[][] ${name} = stringTo2DIntArray(raw_${name});\n`;
+            if (cType === 'List<List<Integer>>') {
+                parseCode += `        List<List<Integer>> ${name}_list = new ArrayList<>();\n`;
+                parseCode += `        for(int[] row : ${name}) {\n`;
+                parseCode += `            List<Integer> listRow = new ArrayList<>();\n`;
+                parseCode += `            for(int v : row) listRow.add(v);\n`;
+                parseCode += `            ${name}_list.add(listRow);\n`;
+                callArgs.push(`${name}_list`);
+            } else {
+                callArgs.push(name);
+            }
+        } else if (javaType === 'int' || cType === 'integer') {
             parseCode += `        int ${name} = 0;\n`;
             parseCode += `        try { ${name} = Integer.parseInt(raw_${name}.trim()); } catch(Exception e) {}\n`;
             callArgs.push(name);
-        } else if (type === 'String') {
-            parseCode += `        String ${name} = raw_${name};\n`;
+        } else if (javaType === 'long') {
+            parseCode += `        long ${name} = 0;\n`;
+            parseCode += `        try { ${name} = Long.parseLong(raw_${name}.trim()); } catch(Exception e) {}\n`;
             callArgs.push(name);
-        } else if (type.includes('List<Integer>')) {
-            parseCode += `        int[] arr_${name} = stringToIntArray(raw_${name});\n`;
-            parseCode += `        List<Integer> ${name} = new ArrayList<>();\n`;
-            parseCode += `        for(int val : arr_${name}) ${name}.add(val);\n`;
+        } else if (javaType === 'String') {
+            parseCode += `        String ${name} = raw_${name}.trim();\n`;
+            // Always strip quotes for Java input strings from JSON-like lines
+            parseCode += `        if(${name}.startsWith("\\"")) ${name} = ${name}.substring(1, ${name}.length()-1);\n`;
+            callArgs.push(name);
+        } else if (javaType === 'boolean') {
+            parseCode += `        boolean ${name} = Boolean.parseBoolean(raw_${name}.trim());\n`;
             callArgs.push(name);
         } else {
-            // Fallback
-            parseCode += `        // Unknown type ${type}\n`;
+            // Fallback to List<Integer> if explicitly requested, else int[]
+            if (cType.includes('List<Integer>')) {
+                parseCode += `        int[] arr_${name} = stringToIntArray(raw_${name});\n`;
+                parseCode += `        List<Integer> ${name} = new ArrayList<>();\n`;
+                parseCode += `        for(int val : arr_${name}) ${name}.add(val);\n`;
+                callArgs.push(name);
+            } else {
+                parseCode += `        // Unknown type ${cType} -> ${javaType}, passing raw might fail but better than nothing\n`;
+                parseCode += `        String ${name} = raw_${name};\n`;
+                callArgs.push(name);
+            }
         }
     });
 
     const callArgsStr = callArgs.join(', ');
-    const retType = returnType.type || 'void';
+    const rawRetType = returnType.type || returnType.cType || 'void';
+    let retType = parseType(rawRetType);
+
+    // Handle List<Integer> return specifically
+    // Use regex to check if the main function actually returns List<Integer>
+    if (userCode.match(new RegExp(`public\\s+List<Integer>\\s+${fn}`))) {
+        retType = 'List<Integer>';
+    } else if (userCode.match(new RegExp(`public\\s+List<List<Integer>>\\s+${fn}`))) {
+        retType = 'List<List<Integer>>';
+    } else if (rawRetType.includes('List<Integer>')) {
+        retType = 'List<Integer>';
+    } else if (rawRetType.includes('List<List<Integer>>')) {
+        retType = 'List<List<Integer>>';
+    } else if (rawRetType === 'int*') {
+        retType = 'int[]';
+    } else if (rawRetType === 'long long') {
+        retType = 'long';
+    }
 
     const isSolutionClass = userCode.includes('class Solution');
     const functionCall = isSolutionClass
         ? `        Solution sol = new Solution();\n        ${retType} result = sol.${fn}(${callArgsStr});`
         : `        ${retType} result = ${fn}(${callArgsStr});`;
 
-    let printCode = "";
-    if (retType.includes('ListNode')) {
-        printCode = `        printListNode(result);`;
-    } else if (retType.includes('TreeNode')) {
-        printCode = `        printTreeNode(result);`;
-    } else if (retType === 'int[]') {
-        printCode = `        System.out.print("[");
-        for(int i=0; i<result.length; i++) {
-            System.out.print(result[i]);
-            if(i<result.length-1) System.out.print(",");
-        }
-        System.out.println("]");`;
+    let printLogic;
+    if (problem.slug === 'string-compression') {
+        printLogic = `            System.out.print("Return " + result + ", and the first ");\n        if(result == 1) System.out.print("character"); else System.out.print(result + " characters");\n        System.out.print(" of the input array should be: ");\n        printCharArray(chars, result);`;
+    } else if (retType === 'ListNode') {
+        printLogic = `            printListNode(result);`;
+    } else if (retType === 'TreeNode') {
+        printLogic = `            printTreeNode(result);`;
+    } else if (retType.includes('[]')) {
+        printLogic = `            printArray(result);`;
+    } else if (retType.includes('List')) {
+        // Print List as Array
+        printLogic = `            System.out.print("[");\n        for(int i=0; i<result.size(); i++) {\n            System.out.print(result.get(i));\n            if(i < result.size()-1) System.out.print(",");\n        }\n        System.out.println("]");`;
+    } else if (retType === 'String') {
+        printLogic = `            System.out.println("\\"" + result + "\\"");`;
     } else {
-        printCode = `        System.out.println(result);`;
+        printLogic = `            System.out.println(result);`;
     }
+
+    let printCode = printLogic;
 
     // Clean user code: remove 'public' from 'public class Solution' to avoid collision
     const sanitizedUserCode = userCode.replace(/public\s+class\s+Solution/g, 'class Solution');
@@ -239,8 +384,8 @@ ${sanitizedUserCode}
 
 ${mainClassStart}
 ${parseCode}
-        ${functionCall}
-        ${printCode}
+    ${functionCall}
+    ${printCode}
     }
 }
 `;
