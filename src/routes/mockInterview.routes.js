@@ -30,4 +30,34 @@ router.get('/', async (req, res) => {
     }
 })
 
+/**
+ * @route   GET /api/mock-interviews/:id
+ * @desc    Get single interview by ID
+ * @access  Public
+ */
+router.get('/:id', async (req, res) => {
+    try {
+        const interview = await MockInterview.findById(req.params.id)
+
+        if (!interview) {
+            return res.status(404).json({
+                success: false,
+                message: 'Interview not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            data: interview,
+        })
+    } catch (error) {
+        console.error('Get interview by ID error:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch interview',
+            error: error.message,
+        })
+    }
+})
+
 export default router

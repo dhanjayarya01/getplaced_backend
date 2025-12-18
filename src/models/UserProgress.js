@@ -6,42 +6,10 @@ const userProgressSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
             required: true,
+            unique: true, // One progress doc per user
         },
 
-        // Problem Progress (existing)
-        problemType: {
-            type: String,
-            enum: ['dsa', 'development'],
-        },
-        problemId: {
-            type: mongoose.Schema.Types.ObjectId,
-        },
-        status: {
-            type: String,
-            enum: ['not-started', 'attempted', 'solved'],
-            default: 'not-started',
-        },
-        totalAttempts: {
-            type: Number,
-            default: 0,
-        },
-        firstAttemptDate: Date,
-        solvedDate: Date,
-        timeSpent: {
-            type: Number,
-            default: 0,
-        },
-        notes: String,
-        bookmarked: {
-            type: Boolean,
-            default: false,
-        },
-        bestSubmission: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Submission',
-        },
-
-        // Mock Interview Progress (NEW)
+        // Mock Interview Progress
         interviewProgress: [
             {
                 interviewId: {
@@ -83,9 +51,7 @@ const userProgressSchema = new mongoose.Schema(
 )
 
 // Indexes
-userProgressSchema.index({ user: 1, problemId: 1, problemType: 1 })
-userProgressSchema.index({ user: 1, status: 1 })
-userProgressSchema.index({ user: 1, bookmarked: 1 })
+userProgressSchema.index({ user: 1 })
 userProgressSchema.index({ user: 1, 'interviewProgress.interviewId': 1 })
 
 const UserProgress = mongoose.model('UserProgress', userProgressSchema)

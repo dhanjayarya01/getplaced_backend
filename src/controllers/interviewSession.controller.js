@@ -1,0 +1,536 @@
+import { MockInterviewSession, MockInterview, Resume, UserProgress } from '../models/index.js'
+
+/**
+ * Start new interview session
+ */
+export const startSession = async (req, res) => {
+    try {
+        const { interviewId, difficulty, strictness } = req.body
+        const userId = req.user._id
+
+        // Get interview details
+        const interview = await MockInterview.findById(interviewId)
+        if (!interview) {
+            return res.status(404).json({ success: false, message: 'Interview not found' })
+        }
+
+        // Get user's resume
+        const resume = await Resume.findOne({ userId: userId }).sort({ createdAt: -1 })
+
+        // Log resume data for debugging
+        console.log('Resume found:', resume ? 'Yes' : 'No')
+        if (resume) {
+            console.log('Resume parsedData:', JSON.stringify(resume.parsedData, null, 2))
+        }
+
+        // Get or create user progress
+        let userProgress = await UserProgress.findOne({ user: userId })
+        if (!userProgress) {
+            userProgress = await UserProgress.create({ user: userId })
+        }
+
+        // Debug: Show all interview progress
+        console.log('\n=== STARTING INTERVIEW ===')
+        console.log('Interview ID from request:', interviewId)
+        console.log('User has', userProgress.interviewProgress.length, 'interview progress entries')
+        userProgress.interviewProgress.forEach((p, idx) => {
+            console.log(`Progress ${idx}:`, {
+                interviewId: p.interviewId.toString(),
+                currentStage: p.currentStage,
+                match: p.interviewId.toString() === interviewId.toString()
+            })
+        })
+
+        // Find existing progress for this interview
+        const existingProgress = userProgress.interviewProgress.find(
+            p => p.interviewId.toString() === interviewId.toString()
+        )
+        const currentStage = existingProgress?.currentStage || 1
+
+        console.log('Existing progress found:', existingProgress ? 'Yes' : 'No')
+        if (existingProgress) {
+            console.log('Progress details:', {
+                currentStage: existingProgress.currentStage,
+                overallScore: existingProgress.overallScore,
+                totalAttempts: existingProgress.totalAttempts
+            })
+        }
+        console.log('Starting at stage:', currentStage)
+        console.log('=========================\n')
+
+        // Create session
+        const session = await MockInterviewSession.create({
+            user: userId,
+            interviewTemplate: interviewId,
+            status: 'in-progress',
+            currentStage,
+            responses: [],
+            startedAt: new Date()
+        })
+
+        // Generate dynamic system prompt
+        const systemPrompt = generateSystemPrompt({
+            interview,
+            stage: interview.interviewStages.find(s => s.stage === currentStage),
+            resume: resume?.parsedData,
+            difficulty: difficulty || interview.interviewStages[currentStage - 1]?.difficulty,
+            strictness: strictness || interview.interviewStages[currentStage - 1]?.strictness
+        })
+
+        res.json({
+            success: true,
+            data: {
+                sessionId: session._id,
+                systemPrompt,
+                currentStage,
+                interview: {
+                    title: interview.title,
+                    icon: interview.icon,
+                    codingType: interview.codingType,
+                    stage: interview.interviewStages.find(s => s.stage === currentStage)
+                }
+            }
+        })
+    } catch (error) {
+        console.error('Start session error:', error)
+        res.status(500).json({ success: false, message: error.message })
+    }
+}
+
+/**
+ * Update session with score
+ */
+export const updateScore = async (req, res) => {
+    try {
+        const { id } = req.params
+        const { stage, score, feedback, transcript } = req.body
+
+        const session = await MockInterviewSession.findById(id).populate('interviewTemplate')
+        if (!session) {
+            return res.status(404).json({ success: false, message: 'Session not found' })
+        }
+
+        // Add response
+        session.responses.push({
+            stage,
+            question: transcript?.aiQuestion || '',
+            answer: transcript?.userAnswer || '',
+            score,
+            feedback,
+            timeSpent: 0
+        })
+
+        // Determine progression
+        let canProgress = false
+        let nextStage = stage
+
+        if (score >= 8) {
+            canProgress = true
+            nextStage = stage + 1
+            session.currentStage = nextStage
+        } else if (score >= 5) {
+            canProgress = false // Retry same stage
+        } else {
+            canProgress = false // Practice mode
+        }
+
+        // Check if completed
+        const totalStages = session.interviewTemplate.interviewStages.length
+        if (nextStage > totalStages) {
+            session.status = 'completed'
+            session.completedAt = new Date()
+
+            // Calculate overall score
+            const avgScore = session.responses.reduce((sum, r) => sum + r.score, 0) / session.responses.length
+            session.overallScore = avgScore
+        }
+
+        await session.save()
+
+        // ALWAYS update user progress after each stage attempt
+        await updateUserProgress(
+            session.user,
+            session.interviewTemplate._id,
+            score,
+            session.responses,
+            session.currentStage,
+            session.status === 'completed'
+        )
+
+        res.json({
+            success: true,
+            data: {
+                canProgress,
+                nextStage: nextStage <= totalStages ? nextStage : null,
+                completed: session.status === 'completed',
+                overallScore: session.overallScore,
+                currentScore: score
+            }
+        })
+    } catch (error) {
+        console.error('Update score error:', error)
+        res.status(500).json({ success: false, message: error.message })
+    }
+}
+
+/**
+ * Get session details
+ */
+export const getSession = async (req, res) => {
+    try {
+        const { id } = req.params
+        const session = await MockInterviewSession.findById(id)
+            .populate('interviewTemplate')
+            .populate('user', 'name email')
+
+        if (!session) {
+            return res.status(404).json({ success: false, message: 'Session not found' })
+        }
+
+        // Get user's resume to regenerate system prompt
+        const resume = await Resume.findOne({ userId: session.user._id }).sort({ createdAt: -1 })
+
+        console.log('Resume found for session:', resume ? 'Yes' : 'No')
+        if (resume) {
+            console.log('Resume name:', resume.parsedData?.name)
+        }
+
+        // Get interview details
+        const interview = session.interviewTemplate
+        const currentStage = interview.interviewStages.find(s => s.stage === session.currentStage)
+
+        // Regenerate system prompt with resume data
+        const systemPrompt = generateSystemPrompt({
+            interview,
+            stage: currentStage,
+            resume: resume?.parsedData,
+            difficulty: currentStage?.difficulty,
+            strictness: currentStage?.strictness
+        })
+
+        res.json({
+            success: true,
+            data: {
+                ...session.toObject(),
+                systemPrompt  // Include the generated prompt
+            }
+        })
+    } catch (error) {
+        console.error('Get session error:', error)
+        res.status(500).json({ success: false, message: error.message })
+    }
+}
+
+/**
+ * Generate enhanced system prompt with multi-stage flow
+ */
+function generateSystemPrompt({ interview, stage, resume, difficulty, strictness }) {
+    const userName = resume?.name || 'Candidate'
+    const firstName = userName.split(' ')[0] || 'there'
+    const interviewType = interview.codingType ? 'Technical Coding' : 'Behavioral'
+
+    // Build resume callout separately to avoid nested template literals
+    const resumeCallout = resume ? getResumeCallout(resume) : ''
+    const resumeText = resume ? ` - ${resumeCallout}. That's really cool!` : ' and I\'m excited to learn more about you!'
+
+    // Build resume reference text
+    const resumeRefText = resume ? getResumeReferenceText(resume) : ''
+
+    // Build topics naturally
+    const topicsText = formatTopicsNaturally(stage.topics)
+
+    // Build strictness explanation
+    const strictnessText = getStrictnessExplanation(strictness)
+
+    // Build role description
+    const roleDesc = interview.codingType ?
+        `Think of me as a friendly technical interviewer who's genuinely interested in understanding how you solve problems. I'll ask you coding questions, and I'll want to understand your thought process, edge cases, and optimization approach.` :
+        `Think of me as a friendly interviewer who wants to understand your experiences using the STAR method (Situation, Task, Action, Result). I'll probe deeper to really understand how you think and handle situations!`
+
+    // Build interview guidance
+    const interviewGuidance = getInterviewQuestionGuidance(interview.codingType, stage, resume, strictness)
+
+    // Build resume highlights
+    const resumeHighlights = resume ? extractResumeHighlights(resume) : ''
+
+    // Build personality guidance
+    const personalityGuidance = strictness >= 7 ? 'Maintain high standards and probe deeply' : strictness >= 4 ? 'Balance encouragement with thorough assessment' : 'Be very supportive and guide the candidate'
+
+    const prompt = `You are Tanya, an expert AI interviewer with warmth and professionalism.
+
+YOUR CONVERSATIONAL FLOW (CRITICAL - FOLLOW THIS EXACTLY):
+
+==========================================
+STAGE 1: INITIAL GREETING (START IMMEDIATELY)
+==========================================
+AS SOON AS THE CALL STARTS, immediately greet the candidate with their name:
+
+Say:
+"Hey ${firstName}! 👋 Great to see you here! I'm Tanya, and I'll be conducting your ${interviewType} interview today.
+
+I've had a chance to look through your background${resumeText}
+
+We'll be spending about ${stage.duration} minutes together focusing on ${stage.stageName}. No pressure though - take your time to get comfortable.
+
+Are you ready to begin, or would you like me to explain how this will work first?"
+
+THEN WAIT for user response.
+
+==========================================
+STAGE 2: INTERVIEW BRIEFING  
+==========================================
+If user asks for explanation OR says "explain" OR "how does it work":
+
+Say:
+"Awesome! Let me walk you through it.
+
+📌 **What We'll Cover:**
+We're doing a ${interviewType} interview, specifically focusing on **${stage.stageName}** (this is Level ${stage.stage}). The main topics we'll dive into are: ${topicsText}.
+
+⏱️ **Time:**
+We've got about ${stage.duration} minutes. Don't worry, I'll keep track of time so you can focus on showcasing your skills.
+
+🎯 **My Role:**
+${roleDesc}
+
+📊 **Difficulty Level:**
+This stage is set to **${difficulty}**, with evaluation strictness of ${strictness}/10. ${strictnessText}
+
+${resumeRefText}
+
+📝 **At the End:**
+I'll provide:
+- A score out of 10
+- Detailed feedback on what you did well
+- Top 2 specific areas for improvement
+
+Sound good? Ready to get started? 🚀"
+
+WAIT for confirmation.
+
+If user says "ready", "yes", "let's go", "start", etc. - proceed to Stage 3.
+
+==========================================
+STAGE 3: BEGIN INTERVIEW
+==========================================
+When user confirms they're ready:
+
+Say:
+"Perfect! Alright ${firstName}, let's do this!
+
+Remember, just be yourself and take your time to think through your answers. There's no rush.
+
+Let's start with..."
+
+THEN ask your first question.
+
+==========================================
+DURING INTERVIEW
+==========================================
+
+CANDIDATE INFO:
+- Name: ${userName}
+${resumeHighlights}
+
+INTERVIEW DETAILS:
+- Type: ${interviewType}
+- Stage: ${stage.stageName} (Level ${stage.stage})
+- Duration: ${stage.duration} mins
+- Topics: ${stage.topics.join(', ')}
+- Difficulty: ${difficulty}
+- Strictness: ${strictness}/10
+
+YOUR INTERVIEWING APPROACH:
+${interviewGuidance}
+
+PERSONALITY:
+- Be warm, encouraging, and professional
+- Use natural language like a human would
+- ${personalityGuidance}
+- Reference their resume naturally (e.g., "In your role at [Company]...", "Your [Project] project sounds interesting...")
+- Acknowledge responses authentically ("That's a great point!", "Interesting approach!", "I appreciate that perspective")
+- Ask thoughtful follow-ups based on their answers
+- Don't sound like ChatGPT - be conversational and human-like
+
+==========================================
+STAGE 4: FINAL SCORING
+==========================================
+
+After ${stage.duration} minutes or sufficient questions, provide:
+
+"Alright ${firstName}, that wraps up our interview! Great job working through that with me.
+
+**📊 Your Score: [X]/10**
+
+**💪 What You Did Well:**
+[2-3 specific sentences with examples from their responses]
+
+**🎯 Top 2 Areas for Improvement:**
+1. [Specific area with actionable advice]
+2. [Specific area with actionable advice]
+
+**Next Steps:**
+[If 8-10]: Fantastic work! You're ready to move on to the next stage. Keep it up! 🎉
+[If 5-7]: Good effort! Review this feedback and give this stage another try to strengthen your skills.
+[If 0-4]: I can see your potential! Practice the areas above and come back when ready.
+
+Any questions about the feedback?"
+
+==========================================
+SCORING CRITERIA
+==========================================
+Rate 0-10 based on:
+- Clarity of communication (25%)
+- Depth of knowledge (25%)
+- Problem-solving approach (25%)
+- Relevant examples (25%)
+
+CRITICAL REMINDERS:
+✓ Follow the 3-stage flow: Greeting → Briefing → Interview
+✓ WAIT for user confirmation at each stage
+✓ Reference resume naturally throughout
+✓ Be HUMAN, not robotic
+✓ Make candidate feel comfortable and valued
+✓ Don't just start the interview immediately when user says hello`
+
+    // Log the prompt for debugging
+    console.log('\n=== ENHANCED SYSTEM PROMPT GENERATED ===')
+    console.log(prompt)
+    console.log('================================\n')
+
+    return prompt
+}
+
+// Helper Functions for Enhanced Prompt Generation
+
+function extractResumeHighlights(resume) {
+    if (!resume) return ''
+
+    let text = ''
+
+    if (resume.experience?.length > 0) {
+        const exp = resume.experience[0]
+        text += `\n- Recent: ${exp.role} at ${exp.company}${exp.duration ? ` (${exp.duration})` : ''}`
+        if (resume.experience.length > 1) text += `\n- ${resume.experience.length - 1} other role(s)`
+    }
+
+    // Flatten skills from nested structure
+    const allSkills = []
+    if (resume.skills) {
+        if (resume.skills.languages) allSkills.push(...resume.skills.languages)
+        if (resume.skills.frameworks) allSkills.push(...resume.skills.frameworks)
+        if (resume.skills.databases) allSkills.push(...resume.skills.databases)
+        if (resume.skills.tools) allSkills.push(...resume.skills.tools)
+    }
+    if (allSkills.length > 0) {
+        text += `\n- Skills: ${allSkills.slice(0, 5).join(', ')}${allSkills.length > 5 ? '...' : ''}`
+    }
+
+    if (resume.projects?.length > 0) {
+        text += `\n- Projects: ${resume.projects.slice(0, 2).map(p => p.name).join(', ')}`
+    }
+
+    if (resume.education?.length > 0) {
+        text += `\n- Education: ${resume.education[0].degree} from ${resume.education[0].institution}`
+    }
+
+    return text
+}
+
+function getResumeCallout(resume) {
+    if (!resume) return 'uploaded your info'
+
+    if (resume.experience?.length > 0) {
+        return `I see you worked as ${resume.experience[0].role} at ${resume.experience[0].company}`
+    }
+    if (resume.projects?.length > 0) {
+        return `I see you built ${resume.projects[0].name}`
+    }
+    if (resume.education?.length > 0) {
+        return `I see you studied ${resume.education[0].degree}`
+    }
+    return 'I see your background'
+}
+
+function getResumeReferenceText(resume) {
+    const parts = []
+    if (resume.experience?.length > 0) parts.push(`your experience at ${resume.experience[0].company}`)
+    if (resume.projects?.length > 0) parts.push(`your ${resume.projects[0].name} project`)
+
+    if (parts.length > 0) {
+        return `Since I've seen your resume, I might reference ${parts.join(' or ')} to make our conversation more relevant.\n`
+    }
+    return ''
+}
+
+function formatTopicsNaturally(topics) {
+    if (!topics || topics.length === 0) return 'various topics'
+    if (topics.length === 1) return topics[0]
+    if (topics.length === 2) return `${topics[0]} and ${topics[1]}`
+    return `${topics.slice(0, -1).join(', ')}, and ${topics[topics.length - 1]}`
+}
+
+function getStrictnessExplanation(strictness) {
+    if (strictness >= 8) return "I'll be thorough and expect detailed, well-structured responses."
+    if (strictness >= 5) return "I'll balance encouragement with thorough assessment."
+    return "I'll be supportive and guide you along the way."
+}
+
+function getInterviewQuestionGuidance(isCoding, stage, resume, strictness) {
+    if (isCoding) {
+        return `**Technical Questions:**
+- Ask DSA/coding problems on: ${stage.topics.join(', ')}
+- Evaluate: approach, code quality, edge cases, optimization
+- Encourage thinking aloud
+- Ask follow-ups about complexity and alternatives
+${resume?.experience?.[0] ? `- Connect to experience: "Have you faced similar challenges at ${resume.experience[0].company}?"` : ''}`
+    } else {
+        return `**Behavioral Questions (STAR method):**
+- Focus on: ${stage.topics.join(', ')}
+- Probe: "Tell me more...", "How did you handle...", "What was the result?"
+${resume?.experience?.[0] ? `- Reference background: "In your role at ${resume.experience[0].company}..."` : ''}
+${resume?.projects?.[0] ? `- Or: "When building ${resume.projects[0].name}..."` : ''}
+- Look for: specific examples, clarity, self-awareness`
+    }
+}
+
+/**
+ * Update user progress after interview
+ */
+async function updateUserProgress(userId, interviewId, overallScore, responses, currentStage, isCompleted) {
+    let userProgress = await UserProgress.findOne({ user: userId })
+
+    if (!userProgress) {
+        userProgress = await UserProgress.create({ user: userId })
+    }
+
+    const existingIndex = userProgress.interviewProgress.findIndex(
+        p => p.interviewId.toString() === interviewId.toString()
+    )
+
+    const progressData = {
+        interviewId,
+        interviewType: 'Mock Interview',
+        currentStage: currentStage || responses.length,
+        overallScore,
+        totalAttempts: existingIndex >= 0 ? userProgress.interviewProgress[existingIndex].totalAttempts + 1 : 1,
+        lastAttemptDate: new Date(),
+        stageScores: responses.map(r => ({
+            stage: r.stage,
+            score: r.score,
+            attemptedAt: new Date()
+        }))
+    }
+
+    if (existingIndex >= 0) {
+        userProgress.interviewProgress[existingIndex] = {
+            ...userProgress.interviewProgress[existingIndex].toObject(),
+            ...progressData
+        }
+    } else {
+        userProgress.interviewProgress.push(progressData)
+    }
+
+    await userProgress.save()
+    console.log('User progress updated:', { interviewId, currentStage, overallScore })
+}
