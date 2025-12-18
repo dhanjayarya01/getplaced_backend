@@ -9,14 +9,38 @@ export const getAllDSAProblems = async (req, res) => {
             difficulty,
             dataStructure,
             pattern,
-            // company removed
             status,
             page = 1,
             limit = 20,
             sort = '-createdAt',
+            search,
+            isActive
         } = req.query
 
         const query = {}
+
+        // Filter by active status (for public view)
+        if (isActive !== undefined) {
+            query.isActive = isActive === 'true'
+        }
+
+        // Search by title, problem number, data structures, or patterns
+        if (search && search.trim()) {
+            const searchRegex = { $regex: search.trim(), $options: 'i' }
+            const searchConditions = [
+                { title: searchRegex },
+                { dataStructures: searchRegex },
+                { patterns: searchRegex },
+            ]
+
+            // If search is a number, include problemNumber search
+            const searchNum = parseInt(search.trim())
+            if (!isNaN(searchNum)) {
+                searchConditions.push({ problemNumber: searchNum })
+            }
+
+            query.$or = searchConditions
+        }
 
         if (difficulty) {
             const difficulties = difficulty.split(',')

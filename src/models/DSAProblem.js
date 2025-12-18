@@ -6,6 +6,8 @@ const dsaProblemSchema = new mongoose.Schema(
             type: String,
             required: true,
             trim: true,
+            unique: true,
+            lowercase: true,
         },
         problemNumber: {
             type: Number,
@@ -251,6 +253,8 @@ dsaProblemSchema.index({ slug: 1 })
 dsaProblemSchema.index({ difficulty: 1 })
 dsaProblemSchema.index({ dataStructures: 1 })
 dsaProblemSchema.index({ patterns: 1 })
+dsaProblemSchema.index({ title: 'text' }) // Text index for search
+dsaProblemSchema.index({ isActive: 1 }) // Index for filtering active problems
 
 const DSAProblem = mongoose.model('DSAProblem', dsaProblemSchema)
 

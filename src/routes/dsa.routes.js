@@ -10,11 +10,13 @@ import {
     updateDSAProblem,
     deleteDSAProblem,
 } from '../controllers/dsa.controller.js'
+import { getDSAFilters } from '../controllers/admin.controller.js'
 import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
 
 const router = express.Router()
 
 // Public routes
+router.get('/filters', getDSAFilters) // Must be before /:id
 router.get('/', getAllDSAProblems)
 router.get('/stats', authenticateUser, getDSAStats)
 router.get('/:id', getDSAProblem)
