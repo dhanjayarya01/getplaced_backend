@@ -8,60 +8,85 @@ const userProgressSchema = new mongoose.Schema(
             required: true,
         },
 
-        // Problem Progress
+        // Problem Progress (existing)
         problemType: {
             type: String,
             enum: ['dsa', 'development'],
-            required: true,
         },
         problemId: {
             type: mongoose.Schema.Types.ObjectId,
-            required: true,
         },
-
-        // Status
         status: {
             type: String,
             enum: ['not-started', 'attempted', 'solved'],
             default: 'not-started',
         },
-
-        // Attempts
         totalAttempts: {
             type: Number,
             default: 0,
         },
         firstAttemptDate: Date,
         solvedDate: Date,
-
-        // Time tracking
         timeSpent: {
             type: Number,
             default: 0,
-        }, // in seconds
-
-        // Notes
+        },
         notes: String,
         bookmarked: {
             type: Boolean,
             default: false,
         },
-
-        // Best submission
         bestSubmission: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Submission',
         },
+
+        // Mock Interview Progress (NEW)
+        interviewProgress: [
+            {
+                interviewId: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'MockInterview',
+                },
+                interviewType: String, // "Technical DSA", "Behavioral", etc.
+                currentStage: {
+                    type: Number,
+                    default: 1,
+                },
+                overallScore: {
+                    type: Number,
+                    min: 0,
+                    max: 10,
+                    default: 0,
+                },
+                areasToWorkOn: [String], // ["Array problems", "Communication clarity"]
+                areasGoodIn: [String], // ["Problem solving", "Code structure"]
+                specialThingsToWorkOn: [String], // ["Time complexity analysis", "Edge cases"]
+                totalAttempts: {
+                    type: Number,
+                    default: 0,
+                },
+                lastAttemptDate: Date,
+                stageScores: [
+                    {
+                        stage: Number,
+                        score: Number,
+                        attemptedAt: Date,
+                    },
+                ],
+            },
+        ],
     },
     {
         timestamps: true,
     }
 )
 
-// Compound index to ensure one progress record per user per problem
-userProgressSchema.index({ user: 1, problemId: 1, problemType: 1 }, { unique: true })
+// Indexes
+userProgressSchema.index({ user: 1, problemId: 1, problemType: 1 })
 userProgressSchema.index({ user: 1, status: 1 })
 userProgressSchema.index({ user: 1, bookmarked: 1 })
+userProgressSchema.index({ user: 1, 'interviewProgress.interviewId': 1 })
 
 const UserProgress = mongoose.model('UserProgress', userProgressSchema)
 

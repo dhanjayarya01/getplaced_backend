@@ -8,69 +8,54 @@ const mockInterviewSessionSchema = new mongoose.Schema(
             required: true,
         },
 
-        // Session configuration
-        type: {
-            type: String,
-            enum: ['technical', 'behavioral', 'hr', 'system-design', 'mixed'],
+        // Reference to interview template
+        interviewTemplate: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'MockInterview',
             required: true,
         },
-        difficulty: {
-            type: String,
-            enum: ['Easy', 'Medium', 'Hard'],
-        },
-        packageRange: {
-            min: Number,
-            max: Number,
-        },
-        duration: Number, // in minutes
 
-        // Questions in this session
-        questions: [
-            {
-                questionId: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: 'MockInterview',
-                },
-                order: Number,
-
-                // User's response
-                answer: String,
-                codeSubmitted: String, // If technical with code
-
-                // Evaluation
-                score: Number, // 0-10
-                feedback: String,
-                timeSpent: Number, // in seconds
-
-                // AI Evaluation (if implemented)
-                aiEvaluation: {
-                    score: Number,
-                    keyPointsCovered: [String],
-                    missedPoints: [String],
-                    suggestions: [String],
-                },
-            },
-        ],
-
-        // Session status
+        // Session Status
         status: {
             type: String,
             enum: ['scheduled', 'in-progress', 'completed', 'abandoned'],
             default: 'scheduled',
         },
 
-        startedAt: Date,
-        completedAt: Date,
+        // Current stage
+        currentStage: {
+            type: Number,
+            default: 1,
+        },
 
-        // Overall performance
-        overallScore: Number,
-        overallFeedback: String,
+        // Questions and Answers
+        responses: [
+            {
+                stage: Number,
+                question: String,
+                answer: String,
+                score: Number,
+                feedback: String,
+                timeSpent: Number, // in seconds
+            },
+        ],
 
-        // Strengths and improvements
+        // Overall Results
+        overallScore: {
+            type: Number,
+            min: 0,
+            max: 10,
+        },
+        feedback: String,
         strengths: [String],
         areasToImprove: [String],
 
-        // XP earned
+        // Timing
+        startedAt: Date,
+        completedAt: Date,
+        totalDuration: Number, // in seconds
+
+        // XP & Rewards
         xpEarned: {
             type: Number,
             default: 0,
@@ -83,7 +68,7 @@ const mockInterviewSessionSchema = new mongoose.Schema(
 
 // Indexes
 mockInterviewSessionSchema.index({ user: 1, status: 1 })
-mockInterviewSessionSchema.index({ user: 1, type: 1 })
+mockInterviewSessionSchema.index({ user: 1, interviewTemplate: 1 })
 mockInterviewSessionSchema.index({ createdAt: -1 })
 
 const MockInterviewSession = mongoose.model('MockInterviewSession', mockInterviewSessionSchema)

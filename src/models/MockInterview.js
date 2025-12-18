@@ -2,102 +2,77 @@ import mongoose from 'mongoose'
 
 const mockInterviewSchema = new mongoose.Schema(
     {
+        // Basic Info
         title: {
             type: String,
             required: true,
             trim: true,
+            lowercase: true,
+            unique: true,
         },
-        type: {
-            type: String,
-            enum: ['technical', 'behavioral', 'hr', 'system-design', 'aptitude'],
-            required: true,
+        icon: {
+            type: String, // emoji or icon name
+            default: '🎤',
         },
-        subType: {
-            type: String,
-            // For technical: 'dsa', 'frontend', 'backend', 'fullstack', 'devops'
-            // For behavioral: 'leadership', 'teamwork', 'conflict', 'achievement'
-        },
-
-        // Question details
-        question: {
+        description: {
             type: String,
             required: true,
         },
-        followUpQuestions: [String],
 
-        // For technical questions
-        technicalDetails: {
-            difficulty: {
-                type: String,
-                enum: ['Easy', 'Medium', 'Hard'],
-            },
-            topics: [String],
-            expectedApproach: String,
-            codeRequired: {
-                type: Boolean,
-                default: false,
-            },
-            starterCode: {
-                javascript: String,
-                python: String,
-                java: String,
-            },
-            solution: String,
-            timeComplexity: String,
-            spaceComplexity: String,
+        // Interview Type
+        codingType: {
+            type: Boolean,
+            required: true,
+            default: false, // false = behavioral/HR, true = coding/technical
         },
 
-        // For behavioral questions
-        behavioralDetails: {
-            framework: String, // STAR, CAR, etc.
-            keyPoints: [String],
-            sampleAnswer: String,
-        },
-
-        // Answer guidelines
-        answerGuidelines: {
-            keyPoints: [String],
-            commonMistakes: [String],
-            idealAnswerLength: String, // "2-3 minutes"
-        },
-
-        // Difficulty & Package
-        difficulty: {
-            type: String,
-            enum: ['Easy', 'Medium', 'Hard'],
+        // Overall Duration
+        duration: {
+            type: Number, // in minutes
             required: true,
         },
-        packageRange: {
-            min: Number, // in LPA
-            max: Number,
-        },
 
-        // Companies that asked this
-        companies: [
+        // Interview Stages Configuration
+        interviewStages: [
             {
-                name: String,
-                round: String, // "Phone Screen", "Onsite Round 2", etc.
-                year: Number,
+                stage: {
+                    type: Number, // 1, 2, 3, etc.
+                    required: true,
+                },
+                stageName: {
+                    type: String, // "Introduction", "Technical Round", "HR Round"
+                    required: true,
+                },
+                difficulty: {
+                    type: String,
+                    enum: ['Easy', 'Medium', 'Hard'],
+                    required: true,
+                },
+                strictness: {
+                    type: Number,
+                    min: 0,
+                    max: 10,
+                    required: true,
+                },
+                duration: {
+                    type: Number, // in minutes for this stage
+                    required: true,
+                },
+                topics: [String], // Topics covered in this stage
             },
         ],
 
         // Metadata
-        estimatedTime: String, // "5 min", "10 min"
         tags: [String],
+        companies: [String], // Companies that use this interview pattern
 
         // Stats
-        timesAsked: {
+        timesAttempted: {
             type: Number,
             default: 0,
         },
-        timesAnswered: {
+        averageScore: {
             type: Number,
-            default: 0,
-        },
-        averageRating: {
-            type: Number,
-            min: 0,
-            max: 5,
             default: 0,
         },
 
@@ -106,10 +81,6 @@ const mockInterviewSchema = new mongoose.Schema(
             type: Boolean,
             default: true,
         },
-        isPremium: {
-            type: Boolean,
-            default: false,
-        },
     },
     {
         timestamps: true,
@@ -117,11 +88,9 @@ const mockInterviewSchema = new mongoose.Schema(
 )
 
 // Indexes
-mockInterviewSchema.index({ type: 1 })
-mockInterviewSchema.index({ subType: 1 })
-mockInterviewSchema.index({ difficulty: 1 })
-mockInterviewSchema.index({ 'packageRange.min': 1, 'packageRange.max': 1 })
-mockInterviewSchema.index({ 'companies.name': 1 })
+mockInterviewSchema.index({ title: 1 })
+mockInterviewSchema.index({ codingType: 1 })
+mockInterviewSchema.index({ isActive: 1 })
 
 const MockInterview = mongoose.model('MockInterview', mockInterviewSchema)
 

@@ -8,6 +8,7 @@ node_modules
 package-lock.json
 
 # Scripts and testing
+
 scripts/
 *.test.js
 *.spec.js
@@ -16,6 +17,7 @@ dsalink.json
 leetcode_two_sum_raw.json
 mapped_two_sum.json
 next_10_problems.json
+seedInterviews.js
 temp_slugs.txt
 
 

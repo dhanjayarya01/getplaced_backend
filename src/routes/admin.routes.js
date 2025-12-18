@@ -11,6 +11,7 @@ import {
     getPlatformStats,
 } from '../controllers/admin.controller.js'
 import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
+import mockInterviewRoutes from './admin/mockInterview.admin.routes.js'
 
 const router = express.Router()
 
@@ -31,5 +32,8 @@ router.get('/filters/companies', getCompanyFilters)
 router.get('/users', getAllUsers)
 router.put('/users/:userId/role', updateUserRole)
 router.put('/users/:userId/deactivate', deactivateUser)
+
+// Mock Interview management
+router.use('/mock-interviews', mockInterviewRoutes)
 
 export default router
