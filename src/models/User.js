@@ -23,12 +23,10 @@ const userSchema = new mongoose.Schema(
             type: String,
         },
 
-        // Resume & Profile
+        // Resume Reference
         resume: {
-            url: String,
-            uploadedAt: Date,
-            analysisScore: Number,
-            recommendations: [String],
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Resume',
         },
         bio: String,
         skills: [String],

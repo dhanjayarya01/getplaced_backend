@@ -1,3 +1,34 @@
+# Dependencies
 node_modules
+
+# Environment
 .env
+
+# Lock files
 package-lock.json
+
+# Scripts and testing
+scripts/
+*.test.js
+*.spec.js
+scripts
+dsalink.json
+leetcode_two_sum_raw.json
+mapped_two_sum.json
+next_10_problems.json
+temp_slugs.txt
+
+
+# Build and temp files
+build/
+dist/
+*.log
+temp_*.json
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
