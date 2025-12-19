@@ -61,7 +61,11 @@ export const startSession = async (req, res) => {
             console.log('Progress details:', {
                 currentStage: existingProgress.currentStage,
                 overallScore: existingProgress.overallScore,
-                totalAttempts: existingProgress.totalAttempts
+                totalAttempts: existingProgress.totalAttempts,
+                areasGoodInLength: existingProgress.areasGoodIn?.length || 0,
+                areasToWorkOnLength: existingProgress.areasToWorkOn?.length || 0,
+                areasGoodIn: existingProgress.areasGoodIn,
+                areasToWorkOn: existingProgress.areasToWorkOn
             })
         }
         console.log('Starting at stage:', currentStage)
@@ -219,17 +223,24 @@ export const getSession = async (req, res) => {
             console.log('Resume name:', resume.parsedData?.name)
         }
 
+        // Get user's progress for this interview
+        const userProgress = await UserProgress.findOne({ user: session.user._id })
+        const existingProgress = userProgress?.interviewProgress.find(
+            p => p.interviewId.toString() === session.interviewTemplate._id.toString()
+        )
+
         // Get interview details
         const interview = session.interviewTemplate
         const currentStage = interview.interviewStages.find(s => s.stage === session.currentStage)
 
-        // Regenerate system prompt with resume data AND language preference
+        // Regenerate system prompt with resume data, language preference, AND progress
         const systemPrompt = generateSystemPrompt({
             interview,
             stage: currentStage,
             resume: resume?.parsedData,
             difficulty: currentStage?.difficulty,
             strictness: currentStage?.strictness,
+            progress: existingProgress,  // CRITICAL: Pass user's progress!
             language: session.language || 'English'  // CRITICAL: Pass language from session!
         })
 
@@ -258,28 +269,73 @@ function generateSystemPrompt({ interview, stage, resume, difficulty, strictness
     console.log('🔍 LANGUAGE CHECK:', { language, isNotEnglish: language !== 'English' })
 
     const languageInstruction = language && language !== 'English'
-        ? `🌍 CRITICAL LANGUAGE REQUIREMENT - READ THIS FIRST:
-YOU MUST conduct this ENTIRE interview in ${language} language.
-- ALL your questions must be in ${language}
-- ALL your responses must be in ${language}
-- ALL your feedback must be in ${language}
-- The candidate will speak in ${language}
-- You will respond in ${language}
-- DO NOT use English at all
-- Use ${language} script and pronunciation
+        ? `🌍 CRITICAL LANGUAGE REQUIREMENT - NATURAL HINGLISH STYLE:
 
-Example for Hindi:
-- Say "नमस्ते" not "Hello"
-- Say "आप कैसे हैं?" not "How are you?"
-- Say "बहुत अच्छा" not "Very good"
+YOU MUST speak in NATURAL HINGLISH (Hindi + English mix) - exactly how Indians speak in real life.
 
-This is MANDATORY. Start speaking in ${language} immediately.
+HINGLISH RULES:
+✅ Mix Hindi and English naturally - just like normal conversation
+✅ Use casual, friendly phrases
+✅ Keep technical terms in English (interview, project, experience, etc.)
+✅ Use Hindi for connecting words and casual talk
+
+NATURAL PHRASES TO USE:
+- "Kya aap sun rahe ho?" (Can you hear me?)
+- "Samjhe?" or "Clear hai?" (Understand? / Is it clear?)
+- "Thik hai, chalo shuru karte hain" (Okay, let's start)
+- "Bahut accha!" (Very good!)
+- "Aap batao..." (Tell me...)
+- "Mujhe lagta hai..." (I think...)
+- "Dekhiye..." (Look...)
+- "Basically..." (Basically...)
+- "Matlab..." (I mean...)
+
+EXAMPLES:
+✅ GOOD: "Hey! Aap kaise ho? Main Tanya hun aur aaj main aapka interview lungi. Ready ho?"
+✅ GOOD: "Bahut accha! Toh basically, hum 10 minutes ka session karne wale hain. Clear hai?"
+✅ GOOD: "Aapne Salesforce mein internship ki thi, right? Batao kya kiya tha?"
+
+❌ AVOID: Pure formal Hindi like "साक्षात्कार" - instead say "interview"
+❌ AVOID: Stiff translations - keep it natural and conversational
+
+Speak like a friendly Indian colleague - mix languages naturally!
 ==========================================
 `
-        : ''
+        : language === 'English'
+            ? `💬 CONVERSATIONAL ENGLISH STYLE:
+
+Speak in a NATURAL, CASUAL, FRIENDLY way - like chatting with a friend.
+
+USE THESE NATURAL PHRASES:
+- "How's it going?" instead of "How are you?"
+- "Got it?" or "Make sense?" instead of "Do you understand?"
+- "Awesome!" or "Great stuff!" instead of "Very good"
+- "So basically..." to explain things
+- "You know what I mean?" for emphasis
+- "Let's dive in" instead of "Let's begin"
+- "Cool!" or "Nice!" for encouragement
+- "Alright" or "Okay" as transitions
+
+EXAMPLES:
+✅ "Hey! Great to meet you! I'm Tanya and I'll be interviewing you today. Ready to get started?"
+✅ "Awesome! So basically, we'll chat for about 10 minutes. Sound good?"
+✅ "Nice! I saw you did an internship at Salesforce - tell me about that experience!"
+
+Keep it warm, friendly, and conversational - not robotic!
+==========================================
+`
+            : ''
 
     console.log('🔍 LANGUAGE INSTRUCTION LENGTH:', languageInstruction.length)
     console.log('🔍 LANGUAGE INSTRUCTION PREVIEW:', languageInstruction.substring(0, 200))
+
+    // Debug progress context
+    console.log('🔍 PROGRESS CONTEXT:', {
+        hasProgress: !!progress,
+        totalAttempts: progress?.totalAttempts,
+        areasGoodIn: progress?.areasGoodIn?.length,
+        areasToWorkOn: progress?.areasToWorkOn?.length
+    })
 
     // Build resume callout separately to avoid nested template literals
     const resumeCallout = resume ? getResumeCallout(resume) : ''
@@ -333,19 +389,44 @@ This is MANDATORY. Start speaking in ${language} immediately.
     // Build personality guidance
     const personalityGuidance = strictness >= 7 ? 'Maintain high standards and probe deeply' : strictness >= 4 ? 'Balance encouragement with thorough assessment' : 'Be very supportive and guide the candidate'
 
+    // Build previous progress greeting (if exists)
+    let previousProgressGreeting = ''
+    if (progress && progress.totalAttempts && progress.totalAttempts >= 1) {
+        console.log('✅ BUILDING PROGRESS GREETING - User has previous attempts:', progress.totalAttempts)
+
+        const goodPoints = progress.areasGoodIn && progress.areasGoodIn.length > 0
+            ? progress.areasGoodIn.map((area, i) => `${i + 1}. ${area}`).join('\n')
+            : '- You showed great effort and willingness to learn'
+
+        const improvementAreas = progress.areasToWorkOn && progress.areasToWorkOn.length > 0
+            ? progress.areasToWorkOn.map((area, i) => `${i + 1}. ${area}`).join('\n')
+            : '- We\'ll continue building on your foundation'
+
+        previousProgressGreeting = `
+
+By the way, I noticed you've done this interview before! Last time we met, here's what stood out:
+
+💪 **What You Did Well:**
+${goodPoints}
+
+🎯 **Areas We'll Focus On Today:**
+${improvementAreas}
+
+So today, let's really nail those improvement areas! I'm excited to see your progress.`
+    } else {
+        console.log('❌ NO PROGRESS GREETING - First attempt or no data')
+    }
+
     const prompt = `You are Tanya, an expert AI interviewer with warmth and professionalism.${languageInstruction}
 
 YOUR CONVERSATIONAL FLOW (CRITICAL - FOLLOW THIS EXACTLY):
 
 ==========================================
-STAGE 1: INITIAL GREETING (START IMMEDIATELY)
+STAGE 1: GREETING & INTRODUCTION
 ==========================================
-AS SOON AS THE CALL STARTS, immediately greet the candidate with their name:
+Start with a warm, friendly greeting:
 
-Say:
-"Hey ${firstName}! 👋 Great to see you here! I'm Tanya, and I'll be conducting your ${interviewType} interview today.
-
-I've had a chance to look through your background${resumeText}
+"Hey ${firstName}! Great to see you here. I'm Tanya${resumeText}${previousProgressGreeting}
 
 We'll be spending about ${stage.duration} minutes together focusing on ${stage.stageName}. No pressure though - take your time to get comfortable.
 
@@ -440,14 +521,14 @@ PERSONALITY:
 STAGE 4: FINAL SCORING
 ==========================================
 
-After ${stage.duration} minutes or sufficient questions, provide:
+After ${stage.duration} minutes or sufficient questions, give verbal feedback:
 
 "Alright ${firstName}, that wraps up our interview! Great job working through that with me.
 
 **📊 Your Score: [X]/10**
 
 **💪 What You Did Well:**
-[2-3 specific sentences with examples from their responses]
+[2-3 specific sentences with examples]
 
 **🎯 Top 2 Areas for Improvement:**
 1. [Specific area with actionable advice]
@@ -455,10 +536,18 @@ After ${stage.duration} minutes or sufficient questions, provide:
 
 **Next Steps:**
 [If 8-10]: Fantastic work! You're ready to move on to the next stage. Keep it up! 🎉
-[If 5-7]: Good effort! Review this feedback and give this stage another try to strengthen your skills.
+[If 5-7]: Good effort! Review this feedback and give this stage another try.
 [If 0-4]: I can see your potential! Practice the areas above and come back when ready.
 
 Any questions about the feedback?"
+
+🔴 **CRITICAL - AFTER GIVING FEEDBACK:**
+IMMEDIATELY call the submitFeedback function with:
+- score: the actual score you gave (0-10)
+- areasGoodIn: array of 2-3 things they did well
+- areasToWorkOn: array of 2 areas for improvement
+
+This will automatically save the feedback and end the interview.
 
 ==========================================
 SCORING CRITERIA
@@ -592,11 +681,42 @@ async function updateUserProgress(userId, interviewId, overallScore, responses, 
         p => p.interviewId.toString() === interviewId.toString()
     )
 
+    // Extract detailed feedback from the last response (final scoring)
+    let areasGoodIn = []
+    let areasToWorkOn = []
+
+    if (responses && responses.length > 0) {
+        const lastResponse = responses[responses.length - 1]
+        const feedbackText = lastResponse.feedback || ''
+
+        // Parse "What You Did Well" section
+        const goodMatch = feedbackText.match(/What You Did Well[:\s]*([\s\S]*?)(?=Top.*Areas for Improvement|Areas for Improvement|$)/i)
+        if (goodMatch && goodMatch[1]) {
+            const goodPoints = goodMatch[1]
+                .split(/\d+\.|[•\-]/)  // Split by numbers or bullets
+                .map(s => s.trim())
+                .filter(s => s.length > 10 && s.length < 200)  // Valid feedback length
+            areasGoodIn = goodPoints.slice(0, 3) // Max 3 points
+        }
+
+        // Parse "Areas for Improvement" section
+        const improveMatch = feedbackText.match(/(?:Top.*)?Areas for Improvement[:\s]*([\s\S]*?)(?=Next Steps|$)/i)
+        if (improveMatch && improveMatch[1]) {
+            const improvePoints = improveMatch[1]
+                .split(/\d+\.|[•\-]/)  // Split by numbers or bullets
+                .map(s => s.trim())
+                .filter(s => s.length > 10 && s.length < 200)  // Valid feedback length
+            areasToWorkOn = improvePoints.slice(0, 2) // Max 2 points
+        }
+    }
+
     const progressData = {
         interviewId,
         interviewType: 'Mock Interview',
         currentStage: currentStage || responses.length,
         overallScore,
+        areasGoodIn,
+        areasToWorkOn,
         totalAttempts: existingIndex >= 0 ? userProgress.interviewProgress[existingIndex].totalAttempts + 1 : 1,
         lastAttemptDate: new Date(),
         stageScores: responses.map(r => ({
@@ -616,5 +736,5 @@ async function updateUserProgress(userId, interviewId, overallScore, responses, 
     }
 
     await userProgress.save()
-    console.log('User progress updated:', { interviewId, currentStage, overallScore })
+    console.log('User progress updated:', { interviewId, currentStage, overallScore, areasGoodIn: areasGoodIn.length, areasToWorkOn: areasToWorkOn.length })
 }
