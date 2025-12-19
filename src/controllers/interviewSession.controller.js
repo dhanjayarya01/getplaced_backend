@@ -5,8 +5,17 @@ import { MockInterviewSession, MockInterview, Resume, UserProgress } from '../mo
  */
 export const startSession = async (req, res) => {
     try {
-        const { interviewId, difficulty, strictness } = req.body
+        const { interviewId, difficulty, strictness, language, voiceId } = req.body
         const userId = req.user._id
+
+        console.log('🔍 START SESSION DEBUG:', {
+            interviewId,
+            difficulty,
+            strictness,
+            language,
+            voiceId,
+            userId
+        })
 
         // Get interview details
         const interview = await MockInterview.findById(interviewId)
@@ -65,17 +74,30 @@ export const startSession = async (req, res) => {
             status: 'in-progress',
             currentStage,
             responses: [],
-            startedAt: new Date()
+            startedAt: new Date(),
+            language: language || 'English',
+            voiceId: voiceId || '21m00Tcm4TlvDq8ikWAM' // Rachel - default
         })
 
-        // Generate dynamic system prompt
+        // Generate dynamic system prompt with progress context
+        console.log('🔍 GENERATING PROMPT WITH:', {
+            language: language || 'English',
+            voiceId: voiceId || '21m00Tcm4TlvDq8ikWAM',
+            currentStage,
+            hasProgress: !!existingProgress
+        })
+
         const systemPrompt = generateSystemPrompt({
             interview,
             stage: interview.interviewStages.find(s => s.stage === currentStage),
             resume: resume?.parsedData,
             difficulty: difficulty || interview.interviewStages[currentStage - 1]?.difficulty,
-            strictness: strictness || interview.interviewStages[currentStage - 1]?.strictness
+            strictness: strictness || interview.interviewStages[currentStage - 1]?.strictness,
+            progress: existingProgress, // Pass user's progress for context
+            language: language || 'English'
         })
+
+        console.log('✅ SYSTEM PROMPT FIRST 500 CHARS:', systemPrompt.substring(0, 500))
 
         res.json({
             success: true,
@@ -83,6 +105,8 @@ export const startSession = async (req, res) => {
                 sessionId: session._id,
                 systemPrompt,
                 currentStage,
+                voiceId: session.voiceId,
+                language: session.language,
                 interview: {
                     title: interview.title,
                     icon: interview.icon,
@@ -199,13 +223,14 @@ export const getSession = async (req, res) => {
         const interview = session.interviewTemplate
         const currentStage = interview.interviewStages.find(s => s.stage === session.currentStage)
 
-        // Regenerate system prompt with resume data
+        // Regenerate system prompt with resume data AND language preference
         const systemPrompt = generateSystemPrompt({
             interview,
             stage: currentStage,
             resume: resume?.parsedData,
             difficulty: currentStage?.difficulty,
-            strictness: currentStage?.strictness
+            strictness: currentStage?.strictness,
+            language: session.language || 'English'  // CRITICAL: Pass language from session!
         })
 
         res.json({
@@ -224,10 +249,37 @@ export const getSession = async (req, res) => {
 /**
  * Generate enhanced system prompt with multi-stage flow
  */
-function generateSystemPrompt({ interview, stage, resume, difficulty, strictness }) {
+function generateSystemPrompt({ interview, stage, resume, difficulty, strictness, progress, language }) {
     const userName = resume?.name || 'Candidate'
     const firstName = userName.split(' ')[0] || 'there'
     const interviewType = interview.codingType ? 'Technical Coding' : 'Behavioral'
+
+    // Language instruction - MUST BE FIRST AND PROMINENT
+    console.log('🔍 LANGUAGE CHECK:', { language, isNotEnglish: language !== 'English' })
+
+    const languageInstruction = language && language !== 'English'
+        ? `🌍 CRITICAL LANGUAGE REQUIREMENT - READ THIS FIRST:
+YOU MUST conduct this ENTIRE interview in ${language} language.
+- ALL your questions must be in ${language}
+- ALL your responses must be in ${language}
+- ALL your feedback must be in ${language}
+- The candidate will speak in ${language}
+- You will respond in ${language}
+- DO NOT use English at all
+- Use ${language} script and pronunciation
+
+Example for Hindi:
+- Say "नमस्ते" not "Hello"
+- Say "आप कैसे हैं?" not "How are you?"
+- Say "बहुत अच्छा" not "Very good"
+
+This is MANDATORY. Start speaking in ${language} immediately.
+==========================================
+`
+        : ''
+
+    console.log('🔍 LANGUAGE INSTRUCTION LENGTH:', languageInstruction.length)
+    console.log('🔍 LANGUAGE INSTRUCTION PREVIEW:', languageInstruction.substring(0, 200))
 
     // Build resume callout separately to avoid nested template literals
     const resumeCallout = resume ? getResumeCallout(resume) : ''
@@ -241,6 +293,31 @@ function generateSystemPrompt({ interview, stage, resume, difficulty, strictness
 
     // Build strictness explanation
     const strictnessText = getStrictnessExplanation(strictness)
+
+    // Build progress context
+    let progressContext = ''
+    if (progress && progress.stageScores && progress.stageScores.length > 0) {
+        const previousStages = progress.stageScores
+            .filter(s => s.stage < stage.stage)
+            .sort((a, b) => a.stage - b.stage)
+
+        if (previousStages.length > 0) {
+            progressContext = '\n\n📊 **PREVIOUS PERFORMANCE:**\n'
+            previousStages.forEach(s => {
+                progressContext += `- Stage ${s.stage}: Score ${s.score}/10\n`
+            })
+
+            if (progress.areasToWorkOn && progress.areasToWorkOn.length > 0) {
+                progressContext += `\n🎯 **Areas to Improve:** ${progress.areasToWorkOn.join(', ')}`
+            }
+
+            if (progress.areasGoodIn && progress.areasGoodIn.length > 0) {
+                progressContext += `\n💪 **Strengths:** ${progress.areasGoodIn.join(', ')}`
+            }
+
+            progressContext += '\n\nUse this context to provide continuity and reference their progress when appropriate.'
+        }
+    }
 
     // Build role description
     const roleDesc = interview.codingType ?
@@ -256,7 +333,7 @@ function generateSystemPrompt({ interview, stage, resume, difficulty, strictness
     // Build personality guidance
     const personalityGuidance = strictness >= 7 ? 'Maintain high standards and probe deeply' : strictness >= 4 ? 'Balance encouragement with thorough assessment' : 'Be very supportive and guide the candidate'
 
-    const prompt = `You are Tanya, an expert AI interviewer with warmth and professionalism.
+    const prompt = `You are Tanya, an expert AI interviewer with warmth and professionalism.${languageInstruction}
 
 YOUR CONVERSATIONAL FLOW (CRITICAL - FOLLOW THIS EXACTLY):
 
@@ -331,6 +408,7 @@ DURING INTERVIEW
 CANDIDATE INFO:
 - Name: ${userName}
 ${resumeHighlights}
+${progressContext}
 
 INTERVIEW DETAILS:
 - Type: ${interviewType}
@@ -339,6 +417,12 @@ INTERVIEW DETAILS:
 - Topics: ${stage.topics.join(', ')}
 - Difficulty: ${difficulty}
 - Strictness: ${strictness}/10
+
+⚠️ **CRITICAL - TOPIC FOCUS:**
+- ONLY ask questions related to: ${stage.topics.join(', ')}
+- DO NOT ask about topics from other stages
+- If candidate tries to discuss other topics, politely redirect: "That's interesting, but let's focus on ${stage.topics[0]} for this stage. We'll cover other areas in later stages."
+- Stay strictly within the scope of this stage's topics
 
 YOUR INTERVIEWING APPROACH:
 ${interviewGuidance}

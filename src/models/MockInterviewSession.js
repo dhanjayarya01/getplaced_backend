@@ -50,6 +50,16 @@ const mockInterviewSessionSchema = new mongoose.Schema(
         strengths: [String],
         areasToImprove: [String],
 
+        // Interview Preferences
+        language: {
+            type: String,
+            default: 'English',
+        },
+        voiceId: {
+            type: String,
+            default: '21m00Tcm4TlvDq8ikWAM', // Rachel - default
+        },
+
         // Timing
         startedAt: Date,
         completedAt: Date,
