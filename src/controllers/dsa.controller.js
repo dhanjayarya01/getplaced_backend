@@ -187,6 +187,127 @@ export const getDSAProblem = async (req, res) => {
     }
 }
 
+// Interview-specific: Search DSA problems for AI (lightweight)
+export const searchDSAProblemsForInterview = async (req, res) => {
+    try {
+        const { query, tags, difficulty, limit = 10 } = req.query
+
+        const searchQuery = { isActive: true }
+
+        // Search by title or problem number
+        if (query && query.trim()) {
+            const searchRegex = { $regex: query.trim(), $options: 'i' }
+            const searchConditions = [
+                { title: searchRegex },
+                { dataStructures: searchRegex },
+                { patterns: searchRegex },
+            ]
+
+            // If query is a number, include problemNumber search
+            const searchNum = parseInt(query.trim())
+            if (!isNaN(searchNum)) {
+                searchConditions.push({ problemNumber: searchNum })
+            }
+
+            searchQuery.$or = searchConditions
+        }
+
+        // Filter by tags (data structures or patterns)
+        if (tags) {
+            const tagArray = tags.split(',')
+            searchQuery.$or = searchQuery.$or || []
+            searchQuery.$or.push(
+                { dataStructures: { $in: tagArray } },
+                { patterns: { $in: tagArray } }
+            )
+        }
+
+        // Filter by difficulty
+        if (difficulty) {
+            searchQuery.difficulty = difficulty
+        }
+
+        // Return minimal data for search results
+        const problems = await DSAProblem.find(searchQuery)
+            .select('_id title difficulty dataStructures patterns slug problemNumber')
+            .limit(parseInt(limit))
+            .sort('problemNumber')
+
+        res.json({
+            success: true,
+            data: problems,
+            count: problems.length
+        })
+    } catch (error) {
+        console.error('Error searching DSA problems for interview:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error searching problems',
+            error: error.message,
+        })
+    }
+}
+
+// Interview-specific: Get problem with test cases for interview
+export const getDSAProblemForInterview = async (req, res) => {
+    try {
+        const { id } = req.params
+
+        // Check if id is a valid MongoDB ObjectId
+        const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
+        const query = isValidObjectId ? { _id: id, isActive: true } : { slug: id, isActive: true }
+
+        const problem = await DSAProblem.findOne(query)
+            .select('-solution') // Don't send solution
+            .populate('companies', 'name slug')
+
+        if (!problem) {
+            return res.status(404).json({
+                success: false,
+                message: 'Problem not found',
+            })
+        }
+
+        // Get visible test cases for the interview (up to 3)
+        const visibleTestCases = problem.testCases
+            .filter(tc => !tc.isHidden)
+            .slice(0, 3)
+            .map(tc => ({
+                input: tc.input,
+                expectedOutput: tc.expectedOutput,
+                explanation: tc.explanation
+            }))
+
+        res.json({
+            success: true,
+            data: {
+                problem: {
+                    _id: problem._id,
+                    title: problem.title,
+                    difficulty: problem.difficulty,
+                    description: problem.description,
+                    examples: problem.examples,
+                    constraints: problem.constraints,
+                    dataStructures: problem.dataStructures,
+                    patterns: problem.patterns,
+                    slug: problem.slug,
+                    problemNumber: problem.problemNumber,
+                    companies: problem.companies,
+                    starterCode: problem.starterCode,
+                    sampleTestCases: visibleTestCases
+                }
+            },
+        })
+    } catch (error) {
+        console.error('Error fetching DSA problem for interview:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching problem',
+            error: error.message,
+        })
+    }
+}
+
 // Helper to wrap user code with driver code
 const wrapCode = (code, language, problem) => {
     // Delegate everything to codeWrapperService
