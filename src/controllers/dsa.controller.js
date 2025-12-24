@@ -12,7 +12,7 @@ export const getAllDSAProblems = async (req, res) => {
             status,
             page = 1,
             limit = 20,
-            sort = '-createdAt',
+            sort = 'createdAt',
             search,
             isActive
         } = req.query

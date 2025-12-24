@@ -1029,22 +1029,13 @@ void printNaryTree(struct Node* root) {
     const rawRetType = returnType.type || returnType.cType || 'void';
     const retType = parseType(rawRetType);
     const isVoidReturn = retType === 'void';
-    const isArrayReturn = retType === 'int*' || retType === 'double*' || retType === 'long long*' || retType === 'float*' || retType === 'char*' || retType === 'bool*';
-
-    // Add returnSize variable if array return
-    let returnsizeDecl = '';
-    let finalCallArgs = callArgsStr;
-    if (isArrayReturn && !isVoidReturn) {
-        returnsizeDecl = `    int returnSize = 0;\n`;
-        finalCallArgs = callArgsStr ? `${callArgsStr}, &returnSize` : '&returnSize';
-    }
 
     // Generate function call
     let functionCall;
     if (isVoidReturn) {
         functionCall = `    ${fn}(${callArgsStr});`;
     } else {
-        functionCall = `${returnsizeDecl}    ${retType} result = ${fn}(${finalCallArgs});`;
+        functionCall = `    ${retType} result = ${fn}(${callArgsStr});`;
     }
 
     // Generate print code
@@ -1079,8 +1070,8 @@ void printNaryTree(struct Node* root) {
         else if (retType === 'bool') printCode = `    printBool(result);`;
         else if (retType === 'char') printCode = `    printChar(result);`;
         else if (retType === 'char*') printCode = `    printString(result);`;
-        else if (retType === 'int*') printCode = `    printIntArray(result, returnSize);`; // Fixed: use returnSize
-        else if (retType === 'double*') printCode = `    printDoubleArray(result, returnSize);`; // Fixed: use returnSize
+        else if (retType === 'int*') printCode = `    printIntArray(result, result_size);`;
+        else if (retType === 'double*') printCode = `    printDoubleArray(result, result_size);`;
         else if (retType === 'int**') printCode = `    printIntMatrix(result, result_rows, result_colSizes);`;
         else if (retType === 'struct ListNode*') printCode = `    printLinkedList(result);`;
         else if (retType === 'struct TreeNode*') printCode = `    printTreeNode(result);`;

@@ -60,10 +60,19 @@ export const createSubmission = async (
         const submissionData = {
             source_code: Buffer.from(sourceCode).toString('base64'),
             language_id: languageId,
-            stdin: Buffer.from(stdin).toString('base64'),
             expected_output: Buffer.from(expectedOutput).toString('base64'),
             cpu_time_limit: timeLimit,
             memory_limit: memoryLimit,
+        }
+
+        // JavaScript uses command-line arguments instead of stdin (Judge0 sandbox limitation)
+        if (language.toLowerCase() === 'javascript' || language.toLowerCase() === 'js') {
+            // Convert newline-separated input to space-separated arguments
+            // Example: "[2,7,11,15]\n9" becomes "[2,7,11,15] 9"
+            const argsString = stdin.split('\n').map(arg => `"${arg.replace(/"/g, '\\"')}"`).join(' ');
+            submissionData.command_line_arguments = argsString;
+        } else {
+            submissionData.stdin = Buffer.from(stdin).toString('base64'); // Other languages use stdin
         }
 
         // Add compiler options for C to link math library

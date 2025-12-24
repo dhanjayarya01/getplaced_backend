@@ -106,8 +106,8 @@ function parseWithEscapes(str) {
     try {
         return JSON.parse(str);
     } catch (e) {
-        // Fallback: just strip quotes
-        return str.replace(/^"+|"+$/g, '');
+        // Fallback for malformed JSON
+        return str.replace(/^\"|\"$/g, '').replace(/\\\"/g, '"').replace(/\\\\/g, '\\');
     }
 }
 
@@ -182,7 +182,7 @@ function toNaryTree(arr) {
 }
 
 function toGraph(arr) {
-    // Convert adjacency list to graph: [[2,4],[1,3],[2,4],[1,3]]
+    """Convert adjacency list to graph: [[2,4],[1,3],[2,4],[1,3]]"""
     if (!arr || arr.length === 0) return null;
     
     // Create all nodes first
@@ -204,17 +204,17 @@ function toGraph(arr) {
 }
 
 function parseTuple(arr) {
-    // Convert array to tuple (just return array in JS)
+    """Convert array to tuple (just return array in JS)"""
     return Array.isArray(arr) ? arr : [];
 }
 
 function parseSet(arr) {
-    // Convert array to Set
+    """Convert array to Set"""
     return new Set(Array.isArray(arr) ? arr : []);
 }
 
 function parse3DArray(arr) {
-    // Parse 3D array
+    """Parse 3D array"""
     return arr; // Already parsed by JSON
 }
 
@@ -278,7 +278,7 @@ function naryTreeToArray(root) {
 }
 
 function graphToAdjacencyList(node) {
-    // Convert graph to adjacency list
+    """Convert graph to adjacency list"""
     if (!node) return [];
     
     let visited = new Set();
@@ -299,7 +299,7 @@ function graphToAdjacencyList(node) {
 }
 
 function setToArray(s) {
-    // Convert Set to sorted array
+    """Convert Set to sorted array"""
     return Array.from(s).sort((a, b) => a - b);
 }
 `;
@@ -308,7 +308,7 @@ function setToArray(s) {
     // ARGUMENT PARSER
     // ============================================================================
     const argParser = `
-    const parsedArgs = lines.map((line, index) => {
+    const args = lines.map((line, index) => {
         if (!line.trim()) return undefined;
         
         let parsed;
@@ -334,7 +334,7 @@ function setToArray(s) {
         } else if (paramType.includes('TreeNode')) {
             return toBinaryTree(parsed);
         } else if (paramType.includes('GraphNode')) {
-            return toGraph(parsed);
+            return to Graph(parsed);
         } else if (paramType.includes('Node') && !paramType.includes('ListNode') && !paramType.includes('TreeNode') && !paramType.includes('GraphNode')) {
             return toNaryTree(parsed);
         } else if (paramType.includes('Tuple[') || paramType.includes('tuple')) {
@@ -357,11 +357,11 @@ function setToArray(s) {
     if (isVoidReturn) {
         // Void return - call function and print first parameter
         resultFormatter = `
-    ${fn}(...parsedArgs);
+    ${fn}(...args);
     
     // For void functions, print the first parameter (usually modified in-place)
-    if (parsedArgs.length > 0) {
-        const firstArg = parsedArgs[0];
+    if (args.length > 0) {
+        const firstArg = args[0];
         if (firstArg instanceof ListNode) {
             console.log(JSON.stringify(linkedListToArray(firstArg)));
         } else if (firstArg instanceof TreeNode) {
@@ -378,7 +378,7 @@ function setToArray(s) {
     } else {
         // Normal return
         resultFormatter = `
-    const result = ${fn}(...parsedArgs);
+    const result = ${fn}(...args);
     
     if (result === null || result === undefined) {
         console.log("null");
@@ -399,27 +399,20 @@ function setToArray(s) {
     }
 
     // ============================================================================
-    // ASSEMBLE FINAL CODE  
+    // ASSEMBLE FINAL CODE
     // ============================================================================
-    // JavaScript uses COMMAND-LINE ARGS instead of stdin (Judge0 compatible)
     return `
 ${userCode}
 
 ${helpers}
 
-
-// Parse test input from command-line arguments (Judge0-safe)
-// Each argument is one line of input: node script.js "arg1" "arg2" "arg3"
-const args = process.argv.slice(2);
-
-if (args.length === 0) {
-    console.error('No test input provided');
-    process.exit(1);
+if (typeof fs === 'undefined') {
+    var fs = require('fs');
 }
 
 try {
-    // Each argument IS a line (already separated by Judge0)
-    const lines = args;
+    const input = fs.readFileSync(0, 'utf-8').trim();
+    const lines = input.split('\\n');
     
     // Metadata Parameters (injected)
     const params = ${JSON.stringify(params)};

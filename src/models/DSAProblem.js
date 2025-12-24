@@ -242,6 +242,19 @@ const dsaProblemSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+
+        // Execution Compatibility
+        isSolvableLeetcode: {
+            type: Boolean,
+            default: true, // Most problems are executable
+            description: 'Can this problem be executed with LeetCode-style wrappers?'
+        },
+        problemType: {
+            type: String,
+            enum: ['algorithm', 'design', 'interactive'],
+            default: 'algorithm',
+            description: 'Type of problem: algorithm (executable), design (constructor-based), interactive'
+        }
     },
     {
         timestamps: true,
