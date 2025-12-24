@@ -1,4 +1,4 @@
-import { DSAProblem, UserProgress, Submission } from '../models/index.js'
+import { DSAProblem, User, Submission } from '../models/index.js'
 import judge0Service from '../services/judge0.service.js'
 import codeWrapperService from '../services/codeWrapper.service.js'
 
@@ -57,20 +57,15 @@ export const getAllDSAProblems = async (req, res) => {
             query.patterns = patterns.length > 1 ? { $in: patterns } : pattern
         }
 
-        // If user is authenticated, get their progress
-        let userProgress = []
+        // If user is authenticated, get their solved problems
+        let solvedProblemIds = []
         if (req.user) {
-            userProgress = await UserProgress.find({
-                user: req.user._id,
-                problemType: 'dsa',
-            }).select('problemId status')
+            const user = await User.findById(req.user._id).select('solvedDSAProblems')
+            solvedProblemIds = user?.solvedDSAProblems?.map(s => s.problem.toString()) || []
 
             // Filter by status if requested
-            if (status) {
-                const problemIds = userProgress
-                    .filter((p) => p.status === status)
-                    .map((p) => p.problemId)
-                query._id = { $in: problemIds }
+            if (status === 'solved') {
+                query._id = { $in: user?.solvedDSAProblems?.map(s => s.problem) || [] }
             }
         }
 
@@ -87,12 +82,10 @@ export const getAllDSAProblems = async (req, res) => {
 
         // Attach user progress to each problem
         const problemsWithProgress = problems.map((problem) => {
-            const progress = userProgress.find(
-                (p) => p.problemId.toString() === problem._id.toString()
-            )
+            const isSolved = solvedProblemIds.includes(problem._id.toString())
             return {
                 ...problem.toObject(),
-                userStatus: progress ? progress.status : 'not-started',
+                userStatus: isSolved ? 'solved' : 'not-started',
             }
         })
 
@@ -147,14 +140,11 @@ export const getDSAProblem = async (req, res) => {
         }
 
         // Get user progress if authenticated
-        let userProgress = null
+        let isSolved = false
         let submissions = []
         if (req.user) {
-            userProgress = await UserProgress.findOne({
-                user: req.user._id,
-                problemId: problem._id,
-                problemType: 'dsa',
-            })
+            const user = await User.findById(req.user._id).select('solvedDSAProblems')
+            isSolved = user?.solvedDSAProblems?.some(s => s.problem.toString() === problem._id.toString()) || false
 
             submissions = await Submission.find({
                 user: req.user._id,
@@ -163,14 +153,14 @@ export const getDSAProblem = async (req, res) => {
             })
                 .sort('-createdAt')
                 .limit(10)
-                .select('code') // Don't send full code in list
+                .select('code language status') // Include more fields for UI
         }
 
         res.json({
             success: true,
             data: {
                 problem,
-                userProgress,
+                isSolved,
                 recentSubmissions: submissions,
                 lastSubmissionCode: submissions.length > 0 ? submissions[0].code : null,
                 lastSubmissionLanguage: submissions.length > 0 ? submissions[0].language : null,
@@ -401,6 +391,14 @@ export const submitDSASolution = async (req, res) => {
         const { id } = req.params
         const { code, language } = req.body
 
+        // Check authentication first
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Authentication required to submit solutions',
+            })
+        }
+
         if (!code || !language) {
             return res.status(400).json({
                 success: false,
@@ -435,25 +433,10 @@ export const submitDSASolution = async (req, res) => {
             input: formatInput(tc.input)
         }));
 
-        // Get or create user progress
-        let userProgress = await UserProgress.findOne({
-            user: req.user._id,
-            problemId: problem._id,
-            problemType: 'dsa',
-        })
-
-        if (!userProgress) {
-            userProgress = new UserProgress({
-                user: req.user._id,
-                problemId: problem._id,
-                problemType: 'dsa',
-                status: 'attempted',
-                firstAttemptDate: new Date(),
-                totalAttempts: 0,
-            })
-        }
-
-        userProgress.totalAttempts += 1
+        // Get current solved status for attempt tracking
+        const user = await User.findById(req.user._id).select('solvedDSAProblems stats')
+        const alreadySolved = user.solvedDSAProblems?.some(s => s.problem.toString() === problem._id.toString())
+        const attemptNumber = (user.solvedDSAProblems?.find(s => s.problem.toString() === problem._id.toString())?.attempts || 0) + 1
 
         // Run code against ALL test cases using Judge0
         let executionResult
@@ -480,15 +463,13 @@ export const submitDSASolution = async (req, res) => {
                     language,
                     status: 'runtime-error',
                     compilationError: execError.message,
-                    attemptNumber: userProgress.totalAttempts,
+                    attemptNumber,
                     // Clear previous results
                     testResults: [],
                     isAccepted: false,
                 },
                 { upsert: true, new: true }
             )
-
-            await userProgress.save()
 
             return res.status(500).json({
                 success: false,
@@ -516,23 +497,49 @@ export const submitDSASolution = async (req, res) => {
             const xpMap = { Easy: 10, Medium: 20, Hard: 30 }
             xpEarned = xpMap[problem.difficulty] || 10
 
-            // Update user progress to solved
-            userProgress.status = 'solved'
-            if (!userProgress.solvedDate) {
-                userProgress.solvedDate = new Date()
+            // Update User's solvedDSAProblems if not already solved
+            if (!alreadySolved) {
+                await User.findByIdAndUpdate(req.user._id, {
+                    $push: {
+                        solvedDSAProblems: {
+                            problem: problem._id,
+                            solvedAt: new Date(),
+                            language,
+                            attempts: 1,
+                        },
+                    },
+                    $inc: {
+                        'stats.dsaSolved': 1,
+                        'stats.totalXP': xpEarned,
+                    },
+                })
+            } else {
+                // Update attempts if already solved
+                await User.updateOne(
+                    { _id: req.user._id, 'solvedDSAProblems.problem': problem._id },
+                    { $inc: { 'solvedDSAProblems.$.attempts': 1 } }
+                )
             }
 
-            // Only increment problem stats if this specific user hadn't solved it before
-            // (Or we can just increment global stats blindly, but let's stick to simple logic for now)
-            // Ideally we'd check if userProgress.status WAS NOT 'solved' before.
-            // But since we are simplifing:
-            problem.totalAccepted += 1
+            // Update problem stats
+            if (!alreadySolved) {
+                problem.totalAccepted += 1
+            }
         }
 
         // Update problem stats regardless
         problem.totalSubmissions += 1
         problem.acceptance = (problem.totalAccepted / problem.totalSubmissions) * 100
-        await problem.save()
+
+        // Use updateOne to avoid validation errors on imported problems
+        await DSAProblem.updateOne(
+            { _id: problem._id },
+            {
+                totalSubmissions: problem.totalSubmissions,
+                totalAccepted: problem.totalAccepted,
+                acceptance: problem.acceptance
+            }
+        )
 
         // Create or Update submission record (Single submission per problem per user)
         const submission = await Submission.findOneAndUpdate(
@@ -544,7 +551,7 @@ export const submitDSASolution = async (req, res) => {
             {
                 code,
                 language,
-                attemptNumber: userProgress.totalAttempts,
+                attemptNumber,
                 status: submissionStatus,
                 testResults: executionResult.testResults,
                 totalTestCases: executionResult.totalTestCases,
@@ -556,8 +563,6 @@ export const submitDSASolution = async (req, res) => {
             },
             { upsert: true, new: true }
         )
-
-        await userProgress.save()
 
         res.json({
             success: true,
@@ -632,26 +637,15 @@ export const getSubmissionResult = async (req, res) => {
 // Get user's DSA statistics
 export const getDSAStats = async (req, res) => {
     try {
-        const userId = req.user._id
+        const user = await User.findById(req.user._id)
+            .select('solvedDSAProblems stats')
+            .populate('solvedDSAProblems.problem', 'difficulty dataStructures patterns')
 
-        const totalSolved = await UserProgress.countDocuments({
-            user: userId,
+        const totalSolved = user.solvedDSAProblems?.length || 0
+        const totalSubmissions = await Submission.countDocuments({
+            user: req.user._id,
             problemType: 'dsa',
-            status: 'solved',
         })
-
-        const totalAttempted = await UserProgress.countDocuments({
-            user: userId,
-            problemType: 'dsa',
-            status: { $in: ['attempted', 'solved'] },
-        })
-
-        // Get difficulty breakdown
-        const solvedProblems = await UserProgress.find({
-            user: userId,
-            problemType: 'dsa',
-            status: 'solved',
-        }).populate('problemId', 'difficulty dataStructures patterns')
 
         const difficultyBreakdown = {
             Easy: 0,
@@ -662,15 +656,15 @@ export const getDSAStats = async (req, res) => {
         const dataStructureBreakdown = {}
         const patternBreakdown = {}
 
-        solvedProblems.forEach((progress) => {
-            if (progress.problemId) {
-                difficultyBreakdown[progress.problemId.difficulty]++
+        user.solvedDSAProblems?.forEach((solved) => {
+            if (solved.problem) {
+                difficultyBreakdown[solved.problem.difficulty]++
 
-                progress.problemId.dataStructures?.forEach((ds) => {
+                solved.problem.dataStructures?.forEach((ds) => {
                     dataStructureBreakdown[ds] = (dataStructureBreakdown[ds] || 0) + 1
                 })
 
-                progress.problemId.patterns?.forEach((pattern) => {
+                solved.problem.patterns?.forEach((pattern) => {
                     patternBreakdown[pattern] = (patternBreakdown[pattern] || 0) + 1
                 })
             }
@@ -680,7 +674,8 @@ export const getDSAStats = async (req, res) => {
             success: true,
             data: {
                 totalSolved,
-                totalAttempted,
+                totalSubmissions,
+                totalXP: user.stats?.totalXP || 0,
                 difficultyBreakdown,
                 dataStructureBreakdown,
                 patternBreakdown,

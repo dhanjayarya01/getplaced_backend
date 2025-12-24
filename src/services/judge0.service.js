@@ -66,6 +66,11 @@ export const createSubmission = async (
             memory_limit: memoryLimit,
         }
 
+        // Add compiler options for C to link math library
+        if (language.toLowerCase() === 'c') {
+            submissionData.compiler_options = '-lm'
+        }
+
         const headers = {
             'Content-Type': 'application/json',
         }
