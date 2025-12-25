@@ -956,7 +956,9 @@ public class Main {
     let callArgs = [];
 
     params.forEach((param) => {
-        const { name } = param;
+        // Strip Python default values like "val=0", "left=None", "right=None"
+        const rawName = param.name || 'arg';
+        const name = rawName.split('=')[0].trim(); // Extract clean name before '='
         let cType = param.type || param.cType;
         let javaType = parseType(cType);
 

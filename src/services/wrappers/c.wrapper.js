@@ -939,7 +939,9 @@ void printNaryTree(struct Node* root) {
     let callArgs = [];
 
     params.forEach((param) => {
-        const { name } = param;
+        // Strip Python default values like "val=0", "left=None", "right=None"
+        const rawName = param.name || 'arg';
+        const name = rawName.split('=')[0].trim(); // Extract clean name before '='
         const rawType = param.type || param.cType || 'int';
         const cType = parseType(rawType);
 

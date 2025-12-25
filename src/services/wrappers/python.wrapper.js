@@ -84,7 +84,7 @@ export const generatePythonWrapper = (problem, userCode) => {
 
     // Normalize parameters
     params = params.map(p => ({
-        name: p.name,
+        name: p.name.split('=')[0].trim(),
         type: p.type || mapType(p.cType, p.name)
     }));
 
