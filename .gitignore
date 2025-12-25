@@ -19,6 +19,10 @@ mapped_two_sum.json
 next_10_problems.json
 seedInterviews.js
 temp_slugs.txt
+problems_without_testcases.csv
+problems_without_testcases.json
+check_test_case_audit_report.js
+e
 
 
 # Build and temp files

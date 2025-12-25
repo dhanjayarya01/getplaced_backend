@@ -7,8 +7,8 @@ export const generateJavaScriptWrapper = (problem, userCode) => {
     // ============================================================================
     // EXTRACT METADATA
     // ============================================================================
-    const metadata = problem.pythonMetadata || {};
-    let fn = metadata.functionName || problem.functionName;
+    const metadata = problem.metaData || problem.pythonMetadata || {};
+    let fn = metadata.name || metadata.functionName || problem.functionName;
 
     // Fallback: Extract from user code
     if (!fn) {
@@ -18,13 +18,18 @@ export const generateJavaScriptWrapper = (problem, userCode) => {
 
     if (!fn) return userCode;
 
-    const params = (metadata.parameters && metadata.parameters.length > 0)
-        ? metadata.parameters
-        : (problem.parameters || []);
+    // Get params from metaData.params (LeetCode format) or fallback
+    const params = (metadata.params && metadata.params.length > 0)
+        ? metadata.params
+        : (metadata.parameters && metadata.parameters.length > 0)
+            ? metadata.parameters
+            : (problem.parameters || []);
 
-    const returnType = (metadata.returnType && metadata.returnType.type)
-        ? metadata.returnType
-        : (problem.returnType || {});
+    const returnType = (metadata.return && metadata.return.type)
+        ? metadata.return
+        : (metadata.returnType && metadata.returnType.type)
+            ? metadata.returnType
+            : (problem.returnType || {});
 
     // ============================================================================
     // TYPE MAPPING
