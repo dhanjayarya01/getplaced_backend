@@ -44,6 +44,48 @@ const userProgressSchema = new mongoose.Schema(
                 ],
             },
         ],
+
+        // Company-Specific Interview Progress
+        companyInterviewProgress: [
+            {
+                company: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'Company',
+                    required: true,
+                },
+                roleIndex: Number, // Index in company.rolesData array
+                roleName: String, // e.g., "L3 - Software Engineer II"
+
+                // Round-wise detailed progress
+                roundProgress: [{
+                    roundNumber: Number,
+                    roundName: String, // e.g., "Phone Screen"
+                    roundType: String, // coding, behavioral-interview, system-design, etc.
+                    completed: { type: Boolean, default: false },
+                    score: Number, // 1-10 score from AI
+                    feedback: String, // Detailed feedback from AI
+                    areasGoodIn: [String], // What candidate did well
+                    areasToWorkOn: [String], // Areas for improvement
+                    attemptedAt: Date,
+                    problemsAsked: [{ // DSA problems asked in this round
+                        type: mongoose.Schema.Types.ObjectId,
+                        ref: 'DSAProblem'
+                    }]
+                }],
+
+                currentRound: { type: Number, default: 1 }, // Which round user is on
+                overallScore: Number, // Average across completed rounds
+                totalRounds: Number, // Total rounds in this role's pipeline
+                completedRounds: { type: Number, default: 0 },
+
+                startedAt: {
+                    type: Date,
+                    default: Date.now,
+                },
+                lastAttemptedAt: Date,
+                isActive: { type: Boolean, default: true },
+            },
+        ],
     },
     {
         timestamps: true,
@@ -53,6 +95,7 @@ const userProgressSchema = new mongoose.Schema(
 // Indexes
 userProgressSchema.index({ user: 1 })
 userProgressSchema.index({ user: 1, 'interviewProgress.interviewId': 1 })
+userProgressSchema.index({ user: 1, 'companyInterviewProgress.company': 1 })
 
 const UserProgress = mongoose.model('UserProgress', userProgressSchema)
 

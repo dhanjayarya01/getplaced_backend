@@ -2,6 +2,7 @@ import authRoutes from './auth.routes.js'
 import dsaRoutes from './dsa.routes.js'
 import developmentRoutes from './development.routes.js'
 import companyRoutes from './company.routes.js'
+import companyInterviewRoutes from './companyInterview.routes.js'
 import mockInterviewRoutes from './mockInterview.routes.js'
 import userRoutes from './user.routes.js'
 import adminRoutes from './admin.routes.js'
@@ -15,6 +16,7 @@ export default function setupRoutes(app) {
     app.use('/api/dsa', dsaRoutes)
     app.use('/api/development', developmentRoutes)
     app.use('/api/companies', companyRoutes)
+    app.use('/api/companies', companyInterviewRoutes) // Company-specific interviews
     app.use('/api/mock-interviews', mockInterviewRoutes)
     app.use('/api/users', userRoutes)
     app.use('/api/admin', adminRoutes)
