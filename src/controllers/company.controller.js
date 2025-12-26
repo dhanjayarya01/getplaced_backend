@@ -142,8 +142,8 @@ export const getCompany = async (req, res) => {
         }
 
         const company = await Company.findOne(query)
-            .populate('linkedDSAProblems.problem')
-            .populate('linkedDevProblems.problem')
+            .populate('rolesData.linkedDSAProblems.problem')
+            .populate('rolesData.linkedDevProblems.problem')
 
         if (!company) {
             return res.status(404).json({
@@ -518,16 +518,23 @@ export const updateCompany = async (req, res) => {
     }
 }
 
-// Admin: Link DSA problem to company
+// Admin: Link DSA problem to company (role-specific)
 export const linkDSAProblem = async (req, res) => {
     try {
         const { id } = req.params
-        const { problemId, frequency, round, notes } = req.body
+        const { problemId, frequency, role, roundNumber, notes } = req.body
 
         if (!problemId) {
             return res.status(400).json({
                 success: false,
                 message: 'Problem ID is required',
+            })
+        }
+
+        if (!role) {
+            return res.status(400).json({
+                success: false,
+                message: 'Role is required',
             })
         }
 
@@ -540,29 +547,7 @@ export const linkDSAProblem = async (req, res) => {
             })
         }
 
-        const company = await Company.findByIdAndUpdate(
-            id,
-            {
-                $push: {
-                    linkedDSAProblems: {
-                        problem: problemId,
-                        frequency: frequency || 'Medium',
-                        round,
-                        notes,
-                        lastAsked: new Date(),
-                    },
-                },
-            },
-            { new: true }
-        ).populate('linkedDSAProblems.problem')
-
-        // Sync: Add company to DSA problem's companies list
-        if (company) {
-            await DSAProblem.findByIdAndUpdate(problemId, {
-                $addToSet: { companies: company._id }
-            })
-        }
-
+        const company = await Company.findById(id)
         if (!company) {
             return res.status(404).json({
                 success: false,
@@ -570,10 +555,51 @@ export const linkDSAProblem = async (req, res) => {
             })
         }
 
+        const roleIndex = company.rolesData.findIndex(r => r.roleName === role)
+        if (roleIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: `Role '${role}' not found in company`,
+            })
+        }
+
+        // Validate roundNumber if provided
+        if (roundNumber !== undefined && roundNumber !== null) {
+            const roundExists = company.rolesData[roleIndex].hiringPipeline.some(
+                r => r.roundNumber === roundNumber
+            )
+            if (!roundExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Round number ${roundNumber} does not exist for role '${role}'`,
+                })
+            }
+        }
+
+        // Add to role-specific linkedDSAProblems
+        company.rolesData[roleIndex].linkedDSAProblems.push({
+            problem: problemId,
+            frequency: frequency || 'Medium',
+            roundNumber,
+            notes,
+            lastAsked: new Date(),
+        })
+
+        await company.save()
+
+        // Sync: Add company to DSA problem's companies list
+        await DSAProblem.findByIdAndUpdate(problemId, {
+            $addToSet: { companies: company._id }
+        })
+
+        // Populate and return
+        const updatedCompany = await Company.findById(id)
+            .populate('rolesData.linkedDSAProblems.problem')
+
         res.json({
             success: true,
             message: 'DSA problem linked successfully',
-            data: company,
+            data: updatedCompany,
         })
     } catch (error) {
         console.error('Error linking DSA problem:', error)
@@ -586,44 +612,19 @@ export const linkDSAProblem = async (req, res) => {
 }
 
 // Admin: Unlink DSA problem from company
-// Admin: Unlink DSA problem from company
 export const unlinkDSAProblem = async (req, res) => {
     try {
         const { id, linkId } = req.params
+        const { role } = req.query
 
-        // 1. Find company and the specific linked problem subdoc to get the problemId
-        const companyForUnlink = await Company.findOne(
-            { _id: id, 'linkedDSAProblems._id': linkId },
-            { 'linkedDSAProblems.$': 1 }
-        )
-
-        if (!companyForUnlink || companyForUnlink.linkedDSAProblems.length === 0) {
-            return res.status(404).json({
+        if (!role) {
+            return res.status(400).json({
                 success: false,
-                message: 'Link not found',
+                message: 'Role parameter is required',
             })
         }
 
-        const problemId = companyForUnlink.linkedDSAProblems[0].problem
-
-        // 2. Remove from Company
-        const company = await Company.findByIdAndUpdate(
-            id,
-            {
-                $pull: {
-                    linkedDSAProblems: { _id: linkId },
-                },
-            },
-            { new: true }
-        )
-
-        // 3. Remove from DSA Problem
-        if (problemId) {
-            await DSAProblem.findByIdAndUpdate(problemId, {
-                $pull: { companies: id }
-            })
-        }
-
+        const company = await Company.findById(id)
         if (!company) {
             return res.status(404).json({
                 success: false,
@@ -631,10 +632,38 @@ export const unlinkDSAProblem = async (req, res) => {
             })
         }
 
+        const roleIndex = company.rolesData.findIndex(r => r.roleName === role)
+        if (roleIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: `Role '${role}' not found`,
+            })
+        }
+
+        const problemIndex = company.rolesData[roleIndex].linkedDSAProblems.findIndex(
+            p => p._id.toString() === linkId
+        )
+        if (problemIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Problem link not found in this role',
+            })
+        }
+
+        const problemId = company.rolesData[roleIndex].linkedDSAProblems[problemIndex].problem
+        company.rolesData[roleIndex].linkedDSAProblems.splice(problemIndex, 1)
+        await company.save()
+
+        // Remove from DSA Problem's companies list
+        if (problemId) {
+            await DSAProblem.findByIdAndUpdate(problemId, {
+                $pull: { companies: id }
+            })
+        }
+
         res.json({
             success: true,
             message: 'DSA problem unlinked successfully',
-            data: company,
         })
     } catch (error) {
         console.error('Error unlinking DSA problem:', error)
@@ -646,16 +675,23 @@ export const unlinkDSAProblem = async (req, res) => {
     }
 }
 
-// Admin: Link Dev problem to company
+// Admin: Link Dev problem to company (role-specific)
 export const linkDevProblem = async (req, res) => {
     try {
         const { id } = req.params
-        const { problemId, frequency, round, notes } = req.body
+        const { problemId, frequency, role, roundNumber, notes } = req.body
 
         if (!problemId) {
             return res.status(400).json({
                 success: false,
                 message: 'Problem ID is required',
+            })
+        }
+
+        if (!role) {
+            return res.status(400).json({
+                success: false,
+                message: 'Role is required',
             })
         }
 
@@ -668,22 +704,7 @@ export const linkDevProblem = async (req, res) => {
             })
         }
 
-        const company = await Company.findByIdAndUpdate(
-            id,
-            {
-                $push: {
-                    linkedDevProblems: {
-                        problem: problemId,
-                        frequency: frequency || 'Medium',
-                        round,
-                        notes,
-                        lastAsked: new Date(),
-                    },
-                },
-            },
-            { new: true }
-        ).populate('linkedDevProblems.problem')
-
+        const company = await Company.findById(id)
         if (!company) {
             return res.status(404).json({
                 success: false,
@@ -691,10 +712,46 @@ export const linkDevProblem = async (req, res) => {
             })
         }
 
+        const roleIndex = company.rolesData.findIndex(r => r.roleName === role)
+        if (roleIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: `Role '${role}' not found in company`,
+            })
+        }
+
+        // Validate roundNumber if provided
+        if (roundNumber !== undefined && roundNumber !== null) {
+            const roundExists = company.rolesData[roleIndex].hiringPipeline.some(
+                r => r.roundNumber === roundNumber
+            )
+            if (!roundExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Round number ${roundNumber} does not exist for role '${role}'`,
+                })
+            }
+        }
+
+        // Add to role-specific linkedDevProblems
+        company.rolesData[roleIndex].linkedDevProblems.push({
+            problem: problemId,
+            frequency: frequency || 'Medium',
+            roundNumber,
+            notes,
+            lastAsked: new Date(),
+        })
+
+        await company.save()
+
+        // Populate and return
+        const updatedCompany = await Company.findById(id)
+            .populate('rolesData.linkedDevProblems.problem')
+
         res.json({
             success: true,
             message: 'Development problem linked successfully',
-            data: company,
+            data: updatedCompany,
         })
     } catch (error) {
         console.error('Error linking development problem:', error)
@@ -710,17 +767,16 @@ export const linkDevProblem = async (req, res) => {
 export const unlinkDevProblem = async (req, res) => {
     try {
         const { id, linkId } = req.params
+        const { role } = req.query
 
-        const company = await Company.findByIdAndUpdate(
-            id,
-            {
-                $pull: {
-                    linkedDevProblems: { _id: linkId },
-                },
-            },
-            { new: true }
-        )
+        if (!role) {
+            return res.status(400).json({
+                success: false,
+                message: 'Role parameter is required',
+            })
+        }
 
+        const company = await Company.findById(id)
         if (!company) {
             return res.status(404).json({
                 success: false,
@@ -728,10 +784,30 @@ export const unlinkDevProblem = async (req, res) => {
             })
         }
 
+        const roleIndex = company.rolesData.findIndex(r => r.roleName === role)
+        if (roleIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: `Role '${role}' not found`,
+            })
+        }
+
+        const problemIndex = company.rolesData[roleIndex].linkedDevProblems.findIndex(
+            p => p._id.toString() === linkId
+        )
+        if (problemIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Problem link not found in this role',
+            })
+        }
+
+        company.rolesData[roleIndex].linkedDevProblems.splice(problemIndex, 1)
+        await company.save()
+
         res.json({
             success: true,
             message: 'Development problem unlinked successfully',
-            data: company,
         })
     } catch (error) {
         console.error('Error unlinking development problem:', error)
@@ -743,11 +819,11 @@ export const unlinkDevProblem = async (req, res) => {
     }
 }
 
-// Admin: Add interview question to company
+// Admin: Add interview question to company (role-specific)
 export const addInterviewQuestion = async (req, res) => {
     try {
         const { id } = req.params
-        const { question, type, difficulty, round, answer, tips } = req.body
+        const { question, type, difficulty, role, roundNumber, answer, tips } = req.body
 
         if (!question || !type) {
             return res.status(400).json({
@@ -756,31 +832,53 @@ export const addInterviewQuestion = async (req, res) => {
             })
         }
 
-        const company = await Company.findByIdAndUpdate(
-            id,
-            {
-                $push: {
-                    interviewQuestions: {
-                        question,
-                        type,
-                        difficulty,
-                        round,
-                        answer,
-                        tips: tips || [],
-                        askedDate: new Date(),
-                        upvotes: 0,
-                    },
-                },
-            },
-            { new: true }
-        )
+        if (!role) {
+            return res.status(400).json({
+                success: false,
+                message: 'Role is required',
+            })
+        }
 
+        const company = await Company.findById(id)
         if (!company) {
             return res.status(404).json({
                 success: false,
                 message: 'Company not found',
             })
         }
+
+        const roleIndex = company.rolesData.findIndex(r => r.roleName === role)
+        if (roleIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: `Role '${role}' not found in company`,
+            })
+        }
+
+        // Validate roundNumber if provided
+        if (roundNumber !== undefined && roundNumber !== null) {
+            const roundExists = company.rolesData[roleIndex].hiringPipeline.some(
+                r => r.roundNumber === roundNumber
+            )
+            if (!roundExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Round number ${roundNumber} does not exist for role '${role}'`,
+                })
+            }
+        }
+
+        // Add to role-specific interviewQuestions
+        company.rolesData[roleIndex].interviewQuestions.push({
+            question,
+            type,
+            difficulty,
+            roundNumber,
+            answer,
+            tips: tips || [],
+        })
+
+        await company.save()
 
         res.json({
             success: true,
@@ -801,17 +899,16 @@ export const addInterviewQuestion = async (req, res) => {
 export const removeInterviewQuestion = async (req, res) => {
     try {
         const { id, questionId } = req.params
+        const { role } = req.query
 
-        const company = await Company.findByIdAndUpdate(
-            id,
-            {
-                $pull: {
-                    interviewQuestions: { _id: questionId },
-                },
-            },
-            { new: true }
-        )
+        if (!role) {
+            return res.status(400).json({
+                success: false,
+                message: 'Role parameter is required',
+            })
+        }
 
+        const company = await Company.findById(id)
         if (!company) {
             return res.status(404).json({
                 success: false,
@@ -819,10 +916,30 @@ export const removeInterviewQuestion = async (req, res) => {
             })
         }
 
+        const roleIndex = company.rolesData.findIndex(r => r.roleName === role)
+        if (roleIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: `Role '${role}' not found`,
+            })
+        }
+
+        const questionIndex = company.rolesData[roleIndex].interviewQuestions.findIndex(
+            q => q._id.toString() === questionId
+        )
+        if (questionIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Question not found in this role',
+            })
+        }
+
+        company.rolesData[roleIndex].interviewQuestions.splice(questionIndex, 1)
+        await company.save()
+
         res.json({
             success: true,
             message: 'Interview question removed successfully',
-            data: company,
         })
     } catch (error) {
         console.error('Error removing interview question:', error)
@@ -840,8 +957,8 @@ export const getCompanyWithProblems = async (req, res) => {
         const { id } = req.params
 
         const company = await Company.findById(id)
-            .populate('linkedDSAProblems.problem')
-            .populate('linkedDevProblems.problem')
+            .populate('rolesData.linkedDSAProblems.problem')
+            .populate('rolesData.linkedDevProblems.problem')
 
         if (!company) {
             return res.status(404).json({
@@ -888,6 +1005,148 @@ export const deleteCompany = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error deleting company',
+            error: error.message,
+        })
+    }
+}
+
+// ============================================
+// PATTERN MANAGEMENT
+// ============================================
+
+// Admin: Add pattern to company
+export const addPattern = async (req, res) => {
+    try {
+        const { id } = req.params
+        const { name, category, description, frequency, examples, tips } = req.body
+
+        if (!name) {
+            return res.status(400).json({
+                success: false,
+                message: 'Pattern name is required',
+            })
+        }
+
+        const company = await Company.findById(id)
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        company.patterns.push({
+            name,
+            category: category || 'DSA',
+            description,
+            frequency: frequency || 'Medium',
+            examples: examples || [],
+            tips: tips || [],
+        })
+
+        await company.save()
+
+        res.json({
+            success: true,
+            message: 'Pattern added successfully',
+            data: company,
+        })
+    } catch (error) {
+        console.error('Error adding pattern:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error adding pattern',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Update pattern
+export const updatePattern = async (req, res) => {
+    try {
+        const { id, patternId } = req.params
+        const { name, category, description, frequency, examples, tips } = req.body
+
+        const company = await Company.findById(id)
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        const patternIndex = company.patterns.findIndex(
+            p => p._id.toString() === patternId
+        )
+
+        if (patternIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Pattern not found',
+            })
+        }
+
+        const pattern = company.patterns[patternIndex]
+        if (name) pattern.name = name
+        if (category) pattern.category = category
+        if (description !== undefined) pattern.description = description
+        if (frequency) pattern.frequency = frequency
+        if (examples) pattern.examples = examples
+        if (tips) pattern.tips = tips
+
+        await company.save()
+
+        res.json({
+            success: true,
+            message: 'Pattern updated successfully',
+            data: company,
+        })
+    } catch (error) {
+        console.error('Error updating pattern:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error updating pattern',
+            error: error.message,
+        })
+    }
+}
+
+// Admin: Remove pattern from company
+export const removePattern = async (req, res) => {
+    try {
+        const { id, patternId } = req.params
+
+        const company = await Company.findById(id)
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                message: 'Company not found',
+            })
+        }
+
+        const patternIndex = company.patterns.findIndex(
+            p => p._id.toString() === patternId
+        )
+
+        if (patternIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Pattern not found',
+            })
+        }
+
+        company.patterns.splice(patternIndex, 1)
+        await company.save()
+
+        res.json({
+            success: true,
+            message: 'Pattern removed successfully',
+        })
+    } catch (error) {
+        console.error('Error removing pattern:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error removing pattern',
             error: error.message,
         })
     }

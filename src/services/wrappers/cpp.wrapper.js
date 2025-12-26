@@ -986,7 +986,7 @@ void printNaryTree(Node* root) {
     let callArgs = [];
 
     params.forEach((param) => {
-        const name = param.name.split('=')[0].trim();
+        const { name } = param;
         const rawType = param.type || param.cType || 'string';
         const cppType = parseType(rawType);
         const parser = getParser(cppType);

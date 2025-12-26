@@ -18,6 +18,9 @@ import {
     getCompanyWithProblems,
     getSuggestedCompanies,
     deleteCompany,
+    addPattern,
+    updatePattern,
+    removePattern,
 } from '../controllers/company.controller.js'
 import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
 
@@ -52,5 +55,10 @@ router.delete('/:id/link-dev/:linkId', authenticateUser, isAdmin, unlinkDevProbl
 // Admin routes - Interview Questions
 router.post('/:id/interview-question', authenticateUser, isAdmin, addInterviewQuestion)
 router.delete('/:id/interview-question/:questionId', authenticateUser, isAdmin, removeInterviewQuestion)
+
+// Admin routes - Patterns
+router.post('/:id/pattern', authenticateUser, isAdmin, addPattern)
+router.put('/:id/pattern/:patternId', authenticateUser, isAdmin, updatePattern)
+router.delete('/:id/pattern/:patternId', authenticateUser, isAdmin, removePattern)
 
 export default router

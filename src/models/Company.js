@@ -27,110 +27,132 @@ const companySchema = new mongoose.Schema(
         founded: Number,
 
 
-        roles: [String], // e.g., ["Frontend Developer", "Backend Engineer", "Full Stack"]
-
-
-        hiringPipeline: [
+        // ============================================
+        // NEW ROLE-WISE DATA STRUCTURE
+        // ============================================
+        rolesData: [
             {
-                roundNumber: Number,
-                roundName: {
+                roleName: {
                     type: String,
-                    required: true,
-                },
-                roundType: {
-                    type: String,
-                    enum: [
-                        'aptitude',
-                        'coding',
-                        'technical-interview',
-                        'behavioral-interview',
-                        'hr-interview',
-                        'system-design',
-                        'assignment',
-                        'group-discussion',
-                    ],
                     required: true,
                 },
                 description: String,
-                duration: String, // "60 min", "2 hours"
 
-                // Questions for this round
-                questions: [
+                // Role-specific hiring pipeline
+                hiringPipeline: [
                     {
-                        questionType: {
+                        roundNumber: Number,
+                        roundName: {
                             type: String,
-                            enum: ['dsa', 'development', 'mock-interview', 'aptitude'],
+                            required: true,
                         },
-
+                        roundType: {
+                            type: String,
+                            enum: [
+                                'aptitude',
+                                'coding',
+                                'technical-interview',
+                                'behavioral-interview',
+                                'hr-interview',
+                                'system-design',
+                                'assignment',
+                                'group-discussion',
+                                'online-assessment',
+                                'machine-coding',
+                            ],
+                            required: true,
+                        },
+                        description: String,
+                        duration: String,
+                        passingCriteria: {
+                            minimumScore: Number,
+                            description: String,
+                        },
                     },
                 ],
 
-                // Passing criteria
-                passingCriteria: {
-                    minimumScore: Number,
-                    description: String,
-                },
-            },
-        ],
+                // Role-specific DSA problems with round association
+                linkedDSAProblems: [
+                    {
+                        problem: {
+                            type: mongoose.Schema.Types.ObjectId,
+                            ref: 'DSAProblem',
+                        },
+                        frequency: {
+                            type: String,
+                            enum: ['Very High', 'High', 'Medium', 'Low'],
+                            default: 'Medium',
+                        },
+                        lastAsked: Date,
+                        roundNumber: Number, // Which round this problem appears in
+                        notes: String,
+                    },
+                ],
 
+                // Role-specific Dev problems with round association
+                linkedDevProblems: [
+                    {
+                        problem: {
+                            type: mongoose.Schema.Types.ObjectId,
+                            ref: 'DevelopmentProblem',
+                        },
+                        frequency: {
+                            type: String,
+                            enum: ['Very High', 'High', 'Medium', 'Low'],
+                            default: 'Medium',
+                        },
+                        lastAsked: Date,
+                        roundNumber: Number, // Which round this problem appears in
+                        notes: String,
+                    },
+                ],
 
-        linkedDSAProblems: [
-            {
-                problem: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: 'DSAProblem',
-                },
-                frequency: {
-                    type: String,
-                    enum: ['Very High', 'High', 'Medium', 'Low'],
-                    default: 'Medium',
-                },
-                lastAsked: Date,
-                role: String, // Which role this problem is for (e.g., "Frontend Developer")
-                notes: String, // Additional context
-            },
-        ],
-
-        linkedDevProblems: [
-            {
-                problem: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: 'DevelopmentProblem',
-                },
-                frequency: {
-                    type: String,
-                    enum: ['Very High', 'High', 'Medium', 'Low'],
-                    default: 'Medium',
-                },
-                lastAsked: Date,
-                role: String, // Which role this problem is for
-                notes: String,
+                // Role-specific interview questions with round association
+                interviewQuestions: [
+                    {
+                        question: {
+                            type: String,
+                            required: true,
+                        },
+                        type: {
+                            type: String,
+                            enum: ['Technical', 'Behavioral', 'HR', 'System Design', 'Aptitude'],
+                            required: true,
+                        },
+                        difficulty: {
+                            type: String,
+                            enum: ['Easy', 'Medium', 'Hard'],
+                        },
+                        roundNumber: Number, // Which round this question appears in
+                        answer: String,
+                        tips: [String],
+                    },
+                ],
             },
         ],
 
         // ============================================
-        // INTERVIEW QUESTIONS (Company-Level, Role-Based)
+        // INTERVIEW PATTERNS (Company-wide)
         // ============================================
-        interviewQuestions: [
-            {
-                question: {
-                    type: String,
-                    required: true,
-                },
-                type: {
-                    type: String,
-                    enum: ['Technical', 'Behavioral', 'HR', 'System Design', 'Aptitude'],
-                    required: true,
-                },
-                difficulty: {
-                    type: String,
-                    enum: ['Easy', 'Medium', 'Hard'],
-                },
-                role: String, // Which role this question is for
-
-
+        patterns: [{
+            name: {
+                type: String,
+                required: true,
             },
-        ],
+            category: {
+                type: String,
+                enum: ['DSA', 'System Design', 'Behavioral', 'Other'],
+                default: 'DSA',
+            },
+            description: String,
+            frequency: {
+                type: String,
+                enum: ['Very High', 'High', 'Medium', 'Low'],
+                default: 'Medium',
+            },
+            examples: [String], // Example problems or scenarios
+            tips: [String], // Tips for this pattern
+        }],
 
         // ============================================
         // COMPANY-LEVEL METADATA
@@ -152,24 +174,6 @@ const companySchema = new mongoose.Schema(
             },
         },
 
-        // I WILL CONSIDER THIS LATER
-
-        // // Benefits & Perks
-        // benefits: [String],
-        // workCulture: {
-        //     rating: Number,
-        //     reviews: [
-        //         {
-        //             userId: {
-        //                 type: mongoose.Schema.Types.ObjectId,
-        //                 ref: 'User',
-        //             },
-        //             rating: Number,
-        //             comment: String,
-        //             createdAt: Date,
-        //         },
-        //     ],
-        // },
 
 
 
