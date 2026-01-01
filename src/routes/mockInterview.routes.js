@@ -1,63 +1,34 @@
 import express from 'express'
+import {
+    getAllMockInterviews,
+    getMockInterview,
+    createMockInterviewSession,
+    startMockInterviewSession,
+    submitAnswer,
+    completeMockInterviewSession,
+    getUserSessions,
+    getSessionDetails,
+    createMockInterview,
+    updateMockInterview,
+} from '../controllers/mockInterview.controller.js'
+import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
 
 const router = express.Router()
 
-// Public routes (no auth required)
-import { MockInterview } from '../models/index.js'
+// Public routes
+router.get('/', getAllMockInterviews)
+router.get('/:id', getMockInterview)
 
-/**
- * @route   GET /api/mock-interviews
- * @desc    Get active mock interviews (public)
- * @access  Public
- */
-router.get('/', async (req, res) => {
-    try {
-        const interviews = await MockInterview.find({ isActive: true })
-            .select('title icon description codingType duration interviewStages tags')
-            .sort({ createdAt: -1 })
+// Protected user routes
+router.post('/session', authenticateUser, createMockInterviewSession)
+router.post('/session/:sessionId/start', authenticateUser, startMockInterviewSession)
+router.post('/session/:sessionId/submit/:questionIndex', authenticateUser, submitAnswer)
+router.post('/session/:sessionId/complete', authenticateUser, completeMockInterviewSession)
+router.get('/user/sessions', authenticateUser, getUserSessions)
+router.get('/session/:sessionId', authenticateUser, getSessionDetails)
 
-        res.json({
-            success: true,
-            data: interviews,
-        })
-    } catch (error) {
-        console.error('Get mock interviews error:', error)
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch interviews',
-            error: error.message,
-        })
-    }
-})
-
-/**
- * @route   GET /api/mock-interviews/:id
- * @desc    Get single interview by ID
- * @access  Public
- */
-router.get('/:id', async (req, res) => {
-    try {
-        const interview = await MockInterview.findById(req.params.id)
-
-        if (!interview) {
-            return res.status(404).json({
-                success: false,
-                message: 'Interview not found',
-            })
-        }
-
-        res.json({
-            success: true,
-            data: interview,
-        })
-    } catch (error) {
-        console.error('Get interview by ID error:', error)
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch interview',
-            error: error.message,
-        })
-    }
-})
+// Admin routes
+router.post('/admin/create', authenticateUser, isAdmin, createMockInterview)
+router.put('/admin/:id', authenticateUser, isAdmin, updateMockInterview)
 
 export default router

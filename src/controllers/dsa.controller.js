@@ -131,16 +131,14 @@ export const getAllDSAProblems = async (req, res) => {
             },
         }
 
-        // Cache for 10 minutes
         try {
             await redis.setex(cacheKey, 600, JSON.stringify(response))
-            console.log(`💾 Cached: ${cacheKey} (TTL: 600s)`)
+            console.log(`💾 [CACHED] DSA Problems List - Stored ${problemsWithProgress.length} problems (Page ${page}, TTL: 10min)`)
         } catch (cacheError) {
-            console.error('Cache write error:', cacheError)
+            console.error('❌ [CACHE ERROR] DSA problems write:', cacheError.message)
         }
 
         res.json(response)
-        console.log("problemsWithProgress________", problemsWithProgress)
     } catch (error) {
         console.error('Error fetching DSA problems:', error)
         res.status(500).json({
@@ -167,15 +165,15 @@ export const getDSAProblem = async (req, res) => {
         try {
             const cachedProblem = await redis.get(problemCacheKey)
             if (cachedProblem) {
-                console.log(`✅ Cache HIT: ${problemCacheKey}`)
                 problem = JSON.parse(cachedProblem)
+                console.log(`✅ [CACHE HIT] DSA Problem Detail - ${problem.title || id}`)
             }
         } catch (cacheError) {
-            console.error('Cache read error:', cacheError)
+            console.error('❌ [CACHE ERROR] DSA problem detail read:', cacheError.message)
         }
 
         if (!problem) {
-            console.log(`⚠️  Cache MISS: ${problemCacheKey}`)
+            console.log(`⚠️  [CACHE MISS] DSA Problem Detail - Fetching from database`)
 
             // Check if id is a valid MongoDB ObjectId (24 hex characters)
             const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
@@ -198,12 +196,11 @@ export const getDSAProblem = async (req, res) => {
                 })
             }
 
-            // Cache problem for 1 hour (very stable data)
             try {
                 await redis.setex(problemCacheKey, 3600, JSON.stringify(problem))
-                console.log(`💾 Cached: ${problemCacheKey} (TTL: 3600s)`)
+                console.log(`💾 [CACHED] DSA Problem Detail - ${problem.title} (TTL: 1hr)`)
             } catch (cacheError) {
-                console.error('Cache write error:', cacheError)
+                console.error('❌ [CACHE ERROR] DSA problem detail write:', cacheError.message)
             }
         }
 
@@ -217,10 +214,10 @@ export const getDSAProblem = async (req, res) => {
             try {
                 const cachedSubmissions = await redis.get(submissionCacheKey)
                 if (cachedSubmissions) {
-                    console.log(`✅ Cache HIT: ${submissionCacheKey}`)
                     const submissionData = JSON.parse(cachedSubmissions)
                     isSolved = submissionData.isSolved
                     submissions = submissionData.submissions
+                    console.log(`✅ [CACHE HIT] User Submissions - ${submissions.length} submissions for user`)
                 } else {
                     console.log(`⚠️  Cache MISS: ${submissionCacheKey}`)
 
@@ -236,16 +233,15 @@ export const getDSAProblem = async (req, res) => {
                         .limit(10)
                         .select('code language status')
 
-                    // Cache user submissions for 5 minutes
                     try {
                         await redis.setex(
                             submissionCacheKey,
                             300,
                             JSON.stringify({ isSolved, submissions })
                         )
-                        console.log(`💾 Cached: ${submissionCacheKey} (TTL: 300s)`)
+                        console.log(`💾 [CACHED] User Submissions - ${submissions.length} submissions (TTL: 5min)`)
                     } catch (cacheError) {
-                        console.error('Cache write error:', cacheError)
+                        console.error('❌ [CACHE ERROR] User submissions write:', cacheError.message)
                     }
                 }
             } catch (cacheError) {
@@ -673,9 +669,9 @@ export const submitDSASolution = async (req, res) => {
             { upsert: true, new: true }
         )
 
-        // Invalidate user cache (stats and submissions)
         await invalidateUserCache(req.user._id)
         await redis.del(`dsa:problem:${id}:submissions:${req.user._id}`)
+        console.log(`🔄 [CACHE INVALIDATED] User stats and submissions cleared`)
 
         res.json({
             success: true,
@@ -811,12 +807,11 @@ export const getDSAStats = async (req, res) => {
             },
         }
 
-        // Cache for 5 minutes
         try {
             await redis.setex(cacheKey, 300, JSON.stringify(response))
-            console.log(`💾 Cached: ${cacheKey} (TTL: 300s)`)
+            console.log(`💾 [CACHED] DSA Stats - ${user.solvedDSAProblems?.length || 0} solved problems (TTL: 5min)`)
         } catch (cacheError) {
-            console.error('Cache write error:', cacheError)
+            console.error('❌ [CACHE ERROR] DSA stats write:', cacheError.message)
         }
 
         res.json(response)
@@ -836,8 +831,8 @@ export const createDSAProblem = async (req, res) => {
         const problem = new DSAProblem(req.body)
         await problem.save()
 
-        // Invalidate DSA caches
         await invalidateDSACache()
+        console.log(`🔄 [CACHE INVALIDATED] All DSA caches cleared after problem creation`)
 
         res.status(201).json({
             success: true,
@@ -871,8 +866,8 @@ export const updateDSAProblem = async (req, res) => {
             })
         }
 
-        // Invalidate caches for this specific problem
         await invalidateDSACache(id)
+        console.log(`🔄 [CACHE INVALIDATED] DSA problem '${problem.title}' caches cleared`)
 
         res.json({
             success: true,
@@ -904,8 +899,8 @@ export const deleteDSAProblem = async (req, res) => {
             })
         }
 
-        // Invalidate DSA caches
         await invalidateDSACache(id)
+        console.log(`🔄 [CACHE INVALIDATED] DSA problem deleted from cache`)
 
         res.json({
             success: true,

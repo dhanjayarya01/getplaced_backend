@@ -6,7 +6,7 @@ import {
     warmCache,
     clearAllCache
 } from '../controllers/cacheMonitoring.controller.js'
-import { protect, adminOnly } from '../middleware/auth.middleware.js'
+import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
 
 const router = express.Router()
 
@@ -14,9 +14,9 @@ const router = express.Router()
 router.get('/health', getCacheHealth)
 
 // Protected admin routes
-router.get('/stats', protect, adminOnly, getCacheStats)
-router.post('/stats/reset', protect, adminOnly, resetCacheStats)
-router.post('/warm', protect, adminOnly, warmCache)
-router.post('/clear', protect, adminOnly, clearAllCache)
+router.get('/stats', authenticateUser, isAdmin, getCacheStats)
+router.post('/stats/reset', authenticateUser, isAdmin, resetCacheStats)
+router.post('/warm', authenticateUser, isAdmin, warmCache)
+router.post('/clear', authenticateUser, isAdmin, clearAllCache)
 
 export default router
