@@ -1,4 +1,5 @@
 import { UserProgress } from '../models/index.js'
+import redis from '../config/redis.js'
 
 /**
  * Manually update user progress for testing

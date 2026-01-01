@@ -1,6 +1,8 @@
 import { DSAProblem, User, Submission } from '../models/index.js'
 import judge0Service from '../services/judge0.service.js'
 import codeWrapperService from '../services/codeWrapper.service.js'
+import redis from '../config/redis.js'
+import { generateCacheKey, invalidateDSACache, invalidateUserCache } from '../utils/cache.utils.js'
 
 // Get all DSA problems with filters
 export const getAllDSAProblems = async (req, res) => {
@@ -16,6 +18,35 @@ export const getAllDSAProblems = async (req, res) => {
             search,
             isActive
         } = req.query
+
+        const userId = req.user?._id
+
+        // Generate cache key
+        const cacheKey = generateCacheKey('dsa:all', {
+            difficulty,
+            dataStructure,
+            pattern,
+            status,
+            page,
+            limit,
+            sort,
+            search,
+            isActive,
+            userId: userId?.toString(), // Include user ID for personalized cache
+        })
+
+        // Try to get from cache
+        try {
+            const cachedData = await redis.get(cacheKey)
+            if (cachedData) {
+                console.log(`✅ Cache HIT: ${cacheKey}`)
+                return res.json(JSON.parse(cachedData))
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
+        }
+
+        console.log(`⚠️  Cache MISS: ${cacheKey}`)
 
         const query = {}
 
@@ -89,7 +120,7 @@ export const getAllDSAProblems = async (req, res) => {
             }
         })
 
-        res.json({
+        const response = {
             success: true,
             data: problemsWithProgress,
             pagination: {
@@ -98,7 +129,17 @@ export const getAllDSAProblems = async (req, res) => {
                 total,
                 pages: Math.ceil(total / limit),
             },
-        })
+        }
+
+        // Cache for 10 minutes
+        try {
+            await redis.setex(cacheKey, 600, JSON.stringify(response))
+            console.log(`💾 Cached: ${cacheKey} (TTL: 600s)`)
+        } catch (cacheError) {
+            console.error('Cache write error:', cacheError)
+        }
+
+        res.json(response)
         console.log("problemsWithProgress________", problemsWithProgress)
     } catch (error) {
         console.error('Error fetching DSA problems:', error)
@@ -114,46 +155,114 @@ export const getAllDSAProblems = async (req, res) => {
 export const getDSAProblem = async (req, res) => {
     try {
         const { id } = req.params
+        const userId = req.user?._id
 
+        // Cache key for problem data (shared across all users)
+        const problemCacheKey = `dsa:problem:${id}`
 
+        let problem
         let query = { isActive: true }
 
-        // Check if id is a valid MongoDB ObjectId (24 hex characters)
-        const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
-
-        if (isValidObjectId) {
-            query.$or = [{ _id: id }, { slug: id }]
-        } else {
-            // If not valid ObjectId, only search by slug
-            query.slug = id
+        // Try to get problem from cache
+        try {
+            const cachedProblem = await redis.get(problemCacheKey)
+            if (cachedProblem) {
+                console.log(`✅ Cache HIT: ${problemCacheKey}`)
+                problem = JSON.parse(cachedProblem)
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
         }
-
-        const problem = await DSAProblem.findOne(query)
-            .select('-solution') // Don't send solution initially
-            .populate('companies', 'name slug')
 
         if (!problem) {
-            return res.status(404).json({
-                success: false,
-                message: 'Problem not found',
-            })
+            console.log(`⚠️  Cache MISS: ${problemCacheKey}`)
+
+            // Check if id is a valid MongoDB ObjectId (24 hex characters)
+            const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
+
+            if (isValidObjectId) {
+                query.$or = [{ _id: id }, { slug: id }]
+            } else {
+                // If not valid ObjectId, only search by slug
+                query.slug = id
+            }
+
+            problem = await DSAProblem.findOne(query)
+                .select('-solution') // Don't send solution initially
+                .populate('companies', 'name slug')
+
+            if (!problem) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Problem not found',
+                })
+            }
+
+            // Cache problem for 1 hour (very stable data)
+            try {
+                await redis.setex(problemCacheKey, 3600, JSON.stringify(problem))
+                console.log(`💾 Cached: ${problemCacheKey} (TTL: 3600s)`)
+            } catch (cacheError) {
+                console.error('Cache write error:', cacheError)
+            }
         }
 
-        // Get user progress if authenticated
+        // Get user-specific data (submissions) - cached separately
         let isSolved = false
         let submissions = []
-        if (req.user) {
-            const user = await User.findById(req.user._id).select('solvedDSAProblems')
-            isSolved = user?.solvedDSAProblems?.some(s => s.problem.toString() === problem._id.toString()) || false
+        if (userId) {
+            const submissionCacheKey = `dsa:problem:${id}:submissions:${userId}`
 
-            submissions = await Submission.find({
-                user: req.user._id,
-                problemId: problem._id,
-                problemType: 'dsa',
-            })
-                .sort('-createdAt')
-                .limit(10)
-                .select('code language status') // Include more fields for UI
+            // Try to get submissions from cache
+            try {
+                const cachedSubmissions = await redis.get(submissionCacheKey)
+                if (cachedSubmissions) {
+                    console.log(`✅ Cache HIT: ${submissionCacheKey}`)
+                    const submissionData = JSON.parse(cachedSubmissions)
+                    isSolved = submissionData.isSolved
+                    submissions = submissionData.submissions
+                } else {
+                    console.log(`⚠️  Cache MISS: ${submissionCacheKey}`)
+
+                    const user = await User.findById(userId).select('solvedDSAProblems')
+                    isSolved = user?.solvedDSAProblems?.some(s => s.problem.toString() === problem._id.toString()) || false
+
+                    submissions = await Submission.find({
+                        user: userId,
+                        problemId: problem._id,
+                        problemType: 'dsa',
+                    })
+                        .sort('-createdAt')
+                        .limit(10)
+                        .select('code language status')
+
+                    // Cache user submissions for 5 minutes
+                    try {
+                        await redis.setex(
+                            submissionCacheKey,
+                            300,
+                            JSON.stringify({ isSolved, submissions })
+                        )
+                        console.log(`💾 Cached: ${submissionCacheKey} (TTL: 300s)`)
+                    } catch (cacheError) {
+                        console.error('Cache write error:', cacheError)
+                    }
+                }
+            } catch (cacheError) {
+                console.error('Cache read error:', cacheError)
+                // Fallback to DB query
+                const user = await User.findById(userId).select('solvedDSAProblems')
+                isSolved = user?.solvedDSAProblems?.some(s => s.problem.toString() === problem._id.toString()) || false
+
+                submissions = await Submission.find({
+                    user: userId,
+                    problemId: problem._id,
+                    problemType: 'dsa',
+                })
+                    .sort('-createdAt')
+                    .limit(10)
+                    .select('code language status')
+            }
         }
 
         res.json({
@@ -564,6 +673,10 @@ export const submitDSASolution = async (req, res) => {
             { upsert: true, new: true }
         )
 
+        // Invalidate user cache (stats and submissions)
+        await invalidateUserCache(req.user._id)
+        await redis.del(`dsa:problem:${id}:submissions:${req.user._id}`)
+
         res.json({
             success: true,
             message: executionResult.accepted ? 'All test cases passed!' : 'Some test cases failed',
@@ -637,13 +750,29 @@ export const getSubmissionResult = async (req, res) => {
 // Get user's DSA statistics
 export const getDSAStats = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id)
+        const userId = req.user._id
+        const cacheKey = `dsa:stats:${userId}`
+
+        // Try to get from cache
+        try {
+            const cachedData = await redis.get(cacheKey)
+            if (cachedData) {
+                console.log(`✅ Cache HIT: ${cacheKey}`)
+                return res.json(JSON.parse(cachedData))
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
+        }
+
+        console.log(`⚠️  Cache MISS: ${cacheKey}`)
+
+        const user = await User.findById(userId)
             .select('solvedDSAProblems stats')
             .populate('solvedDSAProblems.problem', 'difficulty dataStructures patterns')
 
         const totalSolved = user.solvedDSAProblems?.length || 0
         const totalSubmissions = await Submission.countDocuments({
-            user: req.user._id,
+            user: userId,
             problemType: 'dsa',
         })
 
@@ -670,7 +799,7 @@ export const getDSAStats = async (req, res) => {
             }
         })
 
-        res.json({
+        const response = {
             success: true,
             data: {
                 totalSolved,
@@ -680,7 +809,17 @@ export const getDSAStats = async (req, res) => {
                 dataStructureBreakdown,
                 patternBreakdown,
             },
-        })
+        }
+
+        // Cache for 5 minutes
+        try {
+            await redis.setex(cacheKey, 300, JSON.stringify(response))
+            console.log(`💾 Cached: ${cacheKey} (TTL: 300s)`)
+        } catch (cacheError) {
+            console.error('Cache write error:', cacheError)
+        }
+
+        res.json(response)
     } catch (error) {
         console.error('Error fetching DSA stats:', error)
         res.status(500).json({
@@ -696,6 +835,9 @@ export const createDSAProblem = async (req, res) => {
     try {
         const problem = new DSAProblem(req.body)
         await problem.save()
+
+        // Invalidate DSA caches
+        await invalidateDSACache()
 
         res.status(201).json({
             success: true,
@@ -729,6 +871,9 @@ export const updateDSAProblem = async (req, res) => {
             })
         }
 
+        // Invalidate caches for this specific problem
+        await invalidateDSACache(id)
+
         res.json({
             success: true,
             message: 'Problem updated successfully',
@@ -758,6 +903,9 @@ export const deleteDSAProblem = async (req, res) => {
                 message: 'Problem not found',
             })
         }
+
+        // Invalidate DSA caches
+        await invalidateDSACache(id)
 
         res.json({
             success: true,

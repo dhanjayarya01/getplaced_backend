@@ -1,4 +1,6 @@
 import { Company, CompanyApplication, User, DSAProblem, DevelopmentProblem } from '../models/index.js'
+import redis from '../config/redis.js'
+import { generateCacheKey, invalidateCompanyCache } from '../utils/cache.utils.js'
 
 // Get all companies with filters
 export const getAllCompanies = async (req, res) => {
@@ -16,6 +18,35 @@ export const getAllCompanies = async (req, res) => {
             limit = 20,
             sort = '-stats.preparing',
         } = req.query
+
+        // Generate cache key
+        const cacheKey = generateCacheKey('companies:all', {
+            difficulty,
+            minPackage,
+            maxPackage,
+            location,
+            isHiring,
+            hiringFreshers,
+            workMode,
+            experience,
+            page,
+            limit,
+            sort,
+            search: req.query.search,
+        })
+
+        // Try to get from cache
+        try {
+            const cachedData = await redis.get(cacheKey)
+            if (cachedData) {
+                console.log(`✅ Cache HIT: ${cacheKey}`)
+                return res.json(JSON.parse(cachedData))
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
+        }
+
+        console.log(`⚠️  Cache MISS: ${cacheKey}`)
 
         const query = {}
 
@@ -58,7 +89,7 @@ export const getAllCompanies = async (req, res) => {
 
         const total = await Company.countDocuments(query)
 
-        res.json({
+        const response = {
             success: true,
             data: companies,
             pagination: {
@@ -67,7 +98,17 @@ export const getAllCompanies = async (req, res) => {
                 total,
                 pages: Math.ceil(total / limit),
             },
-        })
+        }
+
+        // Cache for 5 minutes
+        try {
+            await redis.setex(cacheKey, 300, JSON.stringify(response))
+            console.log(`💾 Cached: ${cacheKey} (TTL: 300s)`)
+        } catch (cacheError) {
+            console.error('Cache write error:', cacheError)
+        }
+
+        res.json(response)
     } catch (error) {
         console.error('Error fetching companies:', error)
         res.status(500).json({
@@ -81,8 +122,24 @@ export const getAllCompanies = async (req, res) => {
 // Get suggested companies for user
 export const getSuggestedCompanies = async (req, res) => {
     try {
+        const userId = req.user._id
+        const cacheKey = `companies:suggested:${userId}`
+
+        // Try to get from cache
+        try {
+            const cachedData = await redis.get(cacheKey)
+            if (cachedData) {
+                console.log(`✅ Cache HIT: ${cacheKey}`)
+                return res.json(JSON.parse(cachedData))
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
+        }
+
+        console.log(`⚠️  Cache MISS: ${cacheKey}`)
+
         // Assume user is authenticated (middleware ensures req.user)
-        const user = await User.findById(req.user._id)
+        const user = await User.findById(userId)
         const query = { isActive: true }
 
         // 1. Match Experience
@@ -111,10 +168,20 @@ export const getSuggestedCompanies = async (req, res) => {
             .limit(10)
             .sort('-isHiring -stats.totalApplicants') // Prioritize hiring & popular
 
-        res.json({
+        const response = {
             success: true,
             data: companies,
-        })
+        }
+
+        // Cache for 15 minutes
+        try {
+            await redis.setex(cacheKey, 900, JSON.stringify(response))
+            console.log(`💾 Cached: ${cacheKey} (TTL: 900s)`)
+        } catch (cacheError) {
+            console.error('Cache write error:', cacheError)
+        }
+
+        res.json(response)
     } catch (error) {
         console.error('Error fetching suggested companies:', error)
         res.status(500).json({
@@ -129,34 +196,63 @@ export const getSuggestedCompanies = async (req, res) => {
 export const getCompany = async (req, res) => {
     try {
         const { id } = req.params
+        const userId = req.user?._id
 
-        // Build query - if id is a valid ObjectId, search both _id and slug
-        // Otherwise, only search by slug
-        let query
-        if (id.match(/^[0-9a-fA-F]{24}$/)) {
-            // Valid ObjectId format
-            query = { $or: [{ _id: id }, { slug: id }] }
-        } else {
-            // Not a valid ObjectId, search only by slug
-            query = { slug: id }
+        // Cache key for company data (shared across all users)
+        const companyCacheKey = `company:detail:${id}`
+
+        let company
+
+        // Try to get company from cache
+        try {
+            const cachedCompany = await redis.get(companyCacheKey)
+            if (cachedCompany) {
+                console.log(`✅ Cache HIT: ${companyCacheKey}`)
+                company = JSON.parse(cachedCompany)
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
         }
-
-        const company = await Company.findOne(query)
-            .populate('rolesData.linkedDSAProblems.problem')
-            .populate('rolesData.linkedDevProblems.problem')
 
         if (!company) {
-            return res.status(404).json({
-                success: false,
-                message: 'Company not found',
-            })
+            console.log(`⚠️  Cache MISS: ${companyCacheKey}`)
+
+            // Build query - if id is a valid ObjectId, search both _id and slug
+            // Otherwise, only search by slug
+            let query
+            if (id.match(/^[0-9a-fA-F]{24}$/)) {
+                // Valid ObjectId format
+                query = { $or: [{ _id: id }, { slug: id }] }
+            } else {
+                // Not a valid ObjectId, search only by slug
+                query = { slug: id }
+            }
+
+            company = await Company.findOne(query)
+                .populate('rolesData.linkedDSAProblems.problem')
+                .populate('rolesData.linkedDevProblems.problem')
+
+            if (!company) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Company not found',
+                })
+            }
+
+            // Cache company for 30 minutes (very stable data)
+            try {
+                await redis.setex(companyCacheKey, 1800, JSON.stringify(company))
+                console.log(`💾 Cached: ${companyCacheKey} (TTL: 1800s)`)
+            } catch (cacheError) {
+                console.error('Cache write error:', cacheError)
+            }
         }
 
-        // Get user's application status if authenticated
+        // Get user's application status if authenticated (not cached)
         let userApplication = null
-        if (req.user) {
+        if (userId) {
             userApplication = await CompanyApplication.findOne({
-                user: req.user._id,
+                user: userId,
                 company: company._id,
             })
         }
@@ -471,6 +567,9 @@ export const createCompany = async (req, res) => {
         const company = new Company(req.body)
         await company.save()
 
+        // Invalidate company caches
+        await invalidateCompanyCache()
+
         res.status(201).json({
             success: true,
             message: 'Company created successfully',
@@ -502,6 +601,9 @@ export const updateCompany = async (req, res) => {
                 message: 'Company not found',
             })
         }
+
+        // Invalidate caches for this specific company
+        await invalidateCompanyCache(id)
 
         res.json({
             success: true,

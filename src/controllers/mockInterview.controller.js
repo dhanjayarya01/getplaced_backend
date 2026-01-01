@@ -1,4 +1,6 @@
 import { MockInterview, MockInterviewSession, User } from '../models/index.js'
+import redis from '../config/redis.js'
+import { generateCacheKey, invalidateMockInterviewCache, invalidateUserCache } from '../utils/cache.utils.js'
 
 // Get all mock interview questions with filters
 export const getAllMockInterviews = async (req, res) => {
@@ -14,6 +16,22 @@ export const getAllMockInterviews = async (req, res) => {
             limit = 20,
             sort = '-createdAt',
         } = req.query
+
+        const cacheKey = generateCacheKey('mock:all', {
+            type, subType, difficulty, minPackage, maxPackage, company, page, limit, sort
+        })
+
+        try {
+            const cachedData = await redis.get(cacheKey)
+            if (cachedData) {
+                console.log(`✅ Cache HIT: ${cacheKey}`)
+                return res.json(JSON.parse(cachedData))
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
+        }
+
+        console.log(`⚠️  Cache MISS: ${cacheKey}`)
 
         const query = { isActive: true }
 
@@ -38,7 +56,7 @@ export const getAllMockInterviews = async (req, res) => {
 
         const total = await MockInterview.countDocuments(query)
 
-        res.json({
+        const response = {
             success: true,
             data: questions,
             pagination: {
@@ -47,7 +65,16 @@ export const getAllMockInterviews = async (req, res) => {
                 total,
                 pages: Math.ceil(total / limit),
             },
-        })
+        }
+
+        try {
+            await redis.setex(cacheKey, 900, JSON.stringify(response)) // 15 minutes
+            console.log(`💾 Cached: ${cacheKey} (TTL: 900s)`)
+        } catch (cacheError) {
+            console.error('Cache write error:', cacheError)
+        }
+
+        res.json(response)
     } catch (error) {
         console.error('Error fetching mock interviews:', error)
         res.status(500).json({
@@ -62,6 +89,19 @@ export const getAllMockInterviews = async (req, res) => {
 export const getMockInterview = async (req, res) => {
     try {
         const { id } = req.params
+        const cacheKey = `mock:interview:${id}`
+
+        try {
+            const cachedData = await redis.get(cacheKey)
+            if (cachedData) {
+                console.log(`✅ Cache HIT: ${cacheKey}`)
+                return res.json(JSON.parse(cachedData))
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
+        }
+
+        console.log(`⚠️  Cache MISS: ${cacheKey}`)
 
         const question = await MockInterview.findOne({
             _id: id,
@@ -75,10 +115,19 @@ export const getMockInterview = async (req, res) => {
             })
         }
 
-        res.json({
+        const response = {
             success: true,
             data: question,
-        })
+        }
+
+        try {
+            await redis.setex(cacheKey, 1800, JSON.stringify(response)) // 30 minutes
+            console.log(`💾 Cached: ${cacheKey} (TTL: 1800s)`)
+        } catch (cacheError) {
+            console.error('Cache write error:', cacheError)
+        }
+
+        res.json(response)
     } catch (error) {
         console.error('Error fetching mock interview:', error)
         res.status(500).json({
@@ -295,6 +344,9 @@ export const completeMockInterviewSession = async (req, res) => {
         user.stats.totalXP += session.xpEarned
         await user.save()
 
+        // Invalidate user session cache
+        await invalidateUserCache(req.user._id)
+
         res.json({
             success: true,
             message: 'Session completed',
@@ -314,8 +366,23 @@ export const completeMockInterviewSession = async (req, res) => {
 export const getUserSessions = async (req, res) => {
     try {
         const { status, type, page = 1, limit = 10 } = req.query
+        const userId = req.user._id
 
-        const query = { user: req.user._id }
+        const cacheKey = generateCacheKey(`mock:sessions:${userId}`, { status, type, page, limit })
+
+        try {
+            const cachedData = await redis.get(cacheKey)
+            if (cachedData) {
+                console.log(`✅ Cache HIT: ${cacheKey}`)
+                return res.json(JSON.parse(cachedData))
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
+        }
+
+        console.log(`⚠️  Cache MISS: ${cacheKey}`)
+
+        const query = { user: userId }
         if (status) query.status = status
         if (type) query.type = type
 
@@ -328,7 +395,7 @@ export const getUserSessions = async (req, res) => {
 
         const total = await MockInterviewSession.countDocuments(query)
 
-        res.json({
+        const response = {
             success: true,
             data: sessions,
             pagination: {
@@ -337,7 +404,16 @@ export const getUserSessions = async (req, res) => {
                 total,
                 pages: Math.ceil(total / limit),
             },
-        })
+        }
+
+        try {
+            await redis.setex(cacheKey, 180, JSON.stringify(response)) // 3 minutes
+            console.log(`💾 Cached: ${cacheKey} (TTL: 180s)`)
+        } catch (cacheError) {
+            console.error('Cache write error:', cacheError)
+        }
+
+        res.json(response)
     } catch (error) {
         console.error('Error fetching sessions:', error)
         res.status(500).json({
@@ -385,6 +461,8 @@ export const createMockInterview = async (req, res) => {
         const question = new MockInterview(req.body)
         await question.save()
 
+        await invalidateMockInterviewCache()
+
         res.status(201).json({
             success: true,
             message: 'Question created successfully',
@@ -416,6 +494,8 @@ export const updateMockInterview = async (req, res) => {
                 message: 'Question not found',
             })
         }
+
+        await invalidateMockInterviewCache(id)
 
         res.json({
             success: true,

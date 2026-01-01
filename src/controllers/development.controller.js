@@ -1,19 +1,38 @@
 import { DevelopmentProblem, UserProgress, Submission } from '../models/index.js'
+import redis from '../config/redis.js'
+import { generateCacheKey, invalidateDevCache, invalidateUserCache } from '../utils/cache.utils.js'
 
 // Get all development problems with filters
 export const getAllDevelopmentProblems = async (req, res) => {
     try {
         const {
             difficulty,
-            technology, // Can be single or comma-separated
-            topic, // Can be single or comma-separated
-            type, // Can be single or comma-separated: 'coding', 'project', 'debugging', 'feature-implementation'
+            technology,
+            topic,
+            type,
             company,
             status,
             page = 1,
             limit = 20,
             sort = '-createdAt',
         } = req.query
+
+        const userId = req.user?._id
+        const cacheKey = generateCacheKey('dev:all', {
+            difficulty, technology, topic, type, company, status, page, limit, sort, userId: userId?.toString()
+        })
+
+        try {
+            const cachedData = await redis.get(cacheKey)
+            if (cachedData) {
+                console.log(`✅ Cache HIT: ${cacheKey}`)
+                return res.json(JSON.parse(cachedData))
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
+        }
+
+        console.log(`⚠️  Cache MISS: ${cacheKey}`)
 
         const query = { isActive: true }
 
@@ -23,19 +42,16 @@ export const getAllDevelopmentProblems = async (req, res) => {
         }
 
         if (technology) {
-            // Support multiple technologies: ?technology=React,Node.js
             const technologies = technology.split(',')
             query.primaryTechnology = technologies.length > 1 ? { $in: technologies } : technology
         }
 
         if (topic) {
-            // Support multiple topics: ?topic=Hooks,State Management
             const topics = topic.split(',')
             query.topics = topics.length > 1 ? { $in: topics } : topic
         }
 
         if (type) {
-            // Support multiple types: ?type=coding,project
             const types = type.split(',')
             query.type = types.length > 1 ? { $in: types } : type
         }
@@ -60,7 +76,7 @@ export const getAllDevelopmentProblems = async (req, res) => {
         const skip = (page - 1) * limit
 
         const problems = await DevelopmentProblem.find(query)
-            .select('-codingProblem.solution -projectProblem.files') // Don't send solutions
+            .select('-codingProblem.solution -projectProblem.files')
             .sort(sort)
             .skip(skip)
             .limit(parseInt(limit))
@@ -77,7 +93,7 @@ export const getAllDevelopmentProblems = async (req, res) => {
             }
         })
 
-        res.json({
+        const response = {
             success: true,
             data: problemsWithProgress,
             pagination: {
@@ -86,7 +102,16 @@ export const getAllDevelopmentProblems = async (req, res) => {
                 total,
                 pages: Math.ceil(total / limit),
             },
-        })
+        }
+
+        try {
+            await redis.setex(cacheKey, 600, JSON.stringify(response)) // 10 minutes
+            console.log(`💾 Cached: ${cacheKey} (TTL: 600s)`)
+        } catch (cacheError) {
+            console.error('Cache write error:', cacheError)
+        }
+
+        res.json(response)
     } catch (error) {
         console.error('Error fetching development problems:', error)
         res.status(500).json({
@@ -263,6 +288,19 @@ export const startProjectChallenge = async (req, res) => {
 export const getDevelopmentStats = async (req, res) => {
     try {
         const userId = req.user._id
+        const cacheKey = `dev:stats:${userId}`
+
+        try {
+            const cachedData = await redis.get(cacheKey)
+            if (cachedData) {
+                console.log(`✅ Cache HIT: ${cacheKey}`)
+                return res.json(JSON.parse(cachedData))
+            }
+        } catch (cacheError) {
+            console.error('Cache read error:', cacheError)
+        }
+
+        console.log(`⚠️  Cache MISS: ${cacheKey}`)
 
         const totalSolved = await UserProgress.countDocuments({
             user: userId,
@@ -308,7 +346,7 @@ export const getDevelopmentStats = async (req, res) => {
             }
         })
 
-        res.json({
+        const response = {
             success: true,
             data: {
                 totalSolved,
@@ -318,7 +356,16 @@ export const getDevelopmentStats = async (req, res) => {
                 topicBreakdown,
                 typeBreakdown,
             },
-        })
+        }
+
+        try {
+            await redis.setex(cacheKey, 300, JSON.stringify(response)) // 5 minutes
+            console.log(`💾 Cached: ${cacheKey} (TTL: 300s)`)
+        } catch (cacheError) {
+            console.error('Cache write error:', cacheError)
+        }
+
+        res.json(response)
     } catch (error) {
         console.error('Error fetching development stats:', error)
         res.status(500).json({
@@ -334,6 +381,8 @@ export const createDevelopmentProblem = async (req, res) => {
     try {
         const problem = new DevelopmentProblem(req.body)
         await problem.save()
+
+        await invalidateDevCache()
 
         res.status(201).json({
             success: true,
@@ -366,6 +415,8 @@ export const updateDevelopmentProblem = async (req, res) => {
                 message: 'Problem not found',
             })
         }
+
+        await invalidateDevCache(id)
 
         res.json({
             success: true,

@@ -9,6 +9,7 @@ import adminRoutes from './admin.routes.js'
 import resumeRoutes from './resume.routes.js'
 import interviewSessionRoutes from './interviewSession.routes.js'
 import userProgressRoutes from './userProgress.routes.js'
+import cacheMonitoringRoutes from './cacheMonitoring.routes.js'
 
 export default function setupRoutes(app) {
     // API routes
@@ -23,6 +24,7 @@ export default function setupRoutes(app) {
     app.use('/api/resume', resumeRoutes)
     app.use('/api/interview-sessions', interviewSessionRoutes)
     app.use('/api/user-progress', userProgressRoutes)
+    app.use('/api/cache', cacheMonitoringRoutes) // Cache monitoring & management
 
     // Health check
     app.get('/api/health', (req, res) => {

@@ -22,8 +22,11 @@ temp_slugs.txt
 problems_without_testcases.csv
 problems_without_testcases.json
 check_test_case_audit_report.js
-e
-
+full*
+audit*
+solution*
+metadata*
+*csv
 
 # Build and temp files
 build/
