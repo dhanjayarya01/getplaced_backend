@@ -2,7 +2,6 @@ import { DevelopmentProblem, UserProgress, Submission } from '../models/index.js
 import redis from '../config/redis.js'
 import { generateCacheKey, invalidateDevCache, invalidateUserCache } from '../utils/cache.utils.js'
 
-// Get all development problems with filters
 export const getAllDevelopmentProblems = async (req, res) => {
     try {
         const {
@@ -19,7 +18,7 @@ export const getAllDevelopmentProblems = async (req, res) => {
 
         const userId = req.user?._id
         const cacheKey = generateCacheKey('dev:all', {
-            difficulty, technology, topic, type, company, status, page, limit, sort, userId: userId?.toString()
+            difficulty, technology, topic, type, company, status, page, limit, sort
         })
 
         try {
@@ -122,7 +121,6 @@ export const getAllDevelopmentProblems = async (req, res) => {
     }
 }
 
-// Get single development problem
 export const getDevelopmentProblem = async (req, res) => {
     try {
         const { id } = req.params
@@ -175,7 +173,6 @@ export const getDevelopmentProblem = async (req, res) => {
     }
 }
 
-// Submit solution for development problem
 export const submitDevelopmentSolution = async (req, res) => {
     try {
         const { id } = req.params
@@ -247,7 +244,6 @@ export const submitDevelopmentSolution = async (req, res) => {
     }
 }
 
-// Start project challenge (for project-based problems)
 export const startProjectChallenge = async (req, res) => {
     try {
         const { id } = req.params
@@ -260,9 +256,6 @@ export const startProjectChallenge = async (req, res) => {
             })
         }
 
-        // TODO: Initialize Docker container for this project
-        // Return container ID and access URL
-
         res.json({
             success: true,
             message: 'Project environment initialized',
@@ -271,7 +264,7 @@ export const startProjectChallenge = async (req, res) => {
                 files: problem.projectProblem.files,
                 setupInstructions: problem.projectProblem.setupInstructions,
                 tasks: problem.projectProblem.tasks,
-                // containerUrl: 'http://localhost:3001', // Would be dynamic
+
             },
         })
     } catch (error) {
@@ -284,7 +277,6 @@ export const startProjectChallenge = async (req, res) => {
     }
 }
 
-// Get development statistics
 export const getDevelopmentStats = async (req, res) => {
     try {
         const userId = req.user._id
@@ -376,7 +368,6 @@ export const getDevelopmentStats = async (req, res) => {
     }
 }
 
-// Admin: Create development problem
 export const createDevelopmentProblem = async (req, res) => {
     try {
         const problem = new DevelopmentProblem(req.body)
@@ -399,7 +390,6 @@ export const createDevelopmentProblem = async (req, res) => {
     }
 }
 
-// Admin: Update development problem
 export const updateDevelopmentProblem = async (req, res) => {
     try {
         const { id } = req.params
@@ -433,7 +423,6 @@ export const updateDevelopmentProblem = async (req, res) => {
     }
 }
 
-// Admin: Delete development problem
 export const deleteDevelopmentProblem = async (req, res) => {
     try {
         const { id } = req.params

@@ -2,7 +2,6 @@ import { MockInterview, MockInterviewSession, User } from '../models/index.js'
 import redis from '../config/redis.js'
 import { generateCacheKey, invalidateMockInterviewCache, invalidateUserCache } from '../utils/cache.utils.js'
 
-// Get all mock interview questions with filters
 export const getAllMockInterviews = async (req, res) => {
     try {
         const {
@@ -86,7 +85,6 @@ export const getAllMockInterviews = async (req, res) => {
     }
 }
 
-// Get single mock interview question
 export const getMockInterview = async (req, res) => {
     try {
         const { id } = req.params
@@ -139,7 +137,6 @@ export const getMockInterview = async (req, res) => {
     }
 }
 
-// Create mock interview session
 export const createMockInterviewSession = async (req, res) => {
     try {
         const { type, difficulty, packageRange, questionCount = 5 } = req.body
@@ -151,7 +148,6 @@ export const createMockInterviewSession = async (req, res) => {
             })
         }
 
-        // Build query for questions
         const query = { isActive: true, type }
         if (difficulty) query.difficulty = difficulty
         if (packageRange) {
@@ -159,7 +155,6 @@ export const createMockInterviewSession = async (req, res) => {
             query['packageRange.max'] = { $gte: packageRange.min }
         }
 
-        // Get random questions
         const questions = await MockInterview.aggregate([
             { $match: query },
             { $sample: { size: parseInt(questionCount) } },
@@ -172,7 +167,6 @@ export const createMockInterviewSession = async (req, res) => {
             })
         }
 
-        // Create session
         const session = new MockInterviewSession({
             user: req.user._id,
             type,
@@ -203,7 +197,6 @@ export const createMockInterviewSession = async (req, res) => {
     }
 }
 
-// Start mock interview session
 export const startMockInterviewSession = async (req, res) => {
     try {
         const { sessionId } = req.params
@@ -246,7 +239,6 @@ export const startMockInterviewSession = async (req, res) => {
     }
 }
 
-// Submit answer for a question in session
 export const submitAnswer = async (req, res) => {
     try {
         const { sessionId, questionIndex } = req.params
@@ -283,9 +275,6 @@ export const submitAnswer = async (req, res) => {
         question.codeSubmitted = codeSubmitted
         question.timeSpent = timeSpent
 
-        // TODO: Implement AI evaluation
-        // question.aiEvaluation = await evaluateAnswer(question, answer)
-
         await session.save()
 
         res.json({
@@ -303,7 +292,6 @@ export const submitAnswer = async (req, res) => {
     }
 }
 
-// Complete mock interview session
 export const completeMockInterviewSession = async (req, res) => {
     try {
         const { sessionId } = req.params
@@ -330,16 +318,13 @@ export const completeMockInterviewSession = async (req, res) => {
         session.status = 'completed'
         session.completedAt = new Date()
 
-        // Calculate overall score (simplified)
         const totalScore = session.questions.reduce((sum, q) => sum + (q.score || 0), 0)
         session.overallScore = totalScore / session.questions.length
 
-        // Calculate XP
         session.xpEarned = Math.floor(session.overallScore * 10)
 
         await session.save()
 
-        // Update user stats
         const user = await User.findById(req.user._id)
         user.stats.mockInterviewsCompleted += 1
         user.stats.totalXP += session.xpEarned
@@ -363,7 +348,6 @@ export const completeMockInterviewSession = async (req, res) => {
     }
 }
 
-// Get user's mock interview sessions
 export const getUserSessions = async (req, res) => {
     try {
         const { status, type, page = 1, limit = 10 } = req.query
@@ -425,7 +409,6 @@ export const getUserSessions = async (req, res) => {
     }
 }
 
-// Get session details
 export const getSessionDetails = async (req, res) => {
     try {
         const { sessionId } = req.params
@@ -456,7 +439,6 @@ export const getSessionDetails = async (req, res) => {
     }
 }
 
-// Admin: Create mock interview question
 export const createMockInterview = async (req, res) => {
     try {
         const question = new MockInterview(req.body)
@@ -479,7 +461,6 @@ export const createMockInterview = async (req, res) => {
     }
 }
 
-// Admin: Update mock interview question
 export const updateMockInterview = async (req, res) => {
     try {
         const { id } = req.params

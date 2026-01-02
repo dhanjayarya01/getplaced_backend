@@ -2,7 +2,6 @@ import { Company, CompanyApplication, User, DSAProblem, DevelopmentProblem } fro
 import redis from '../config/redis.js'
 import { generateCacheKey, invalidateCompanyCache } from '../utils/cache.utils.js'
 
-// Get all companies with filters
 export const getAllCompanies = async (req, res) => {
     try {
         const {
@@ -19,7 +18,6 @@ export const getAllCompanies = async (req, res) => {
             sort = '-stats.preparing',
         } = req.query
 
-        // Generate cache key
         const cacheKey = generateCacheKey('companies:all', {
             difficulty,
             minPackage,
@@ -35,7 +33,6 @@ export const getAllCompanies = async (req, res) => {
             search: req.query.search,
         })
 
-        // Try to get from cache
         try {
             const cachedData = await redis.get(cacheKey)
             if (cachedData) {
@@ -55,11 +52,10 @@ export const getAllCompanies = async (req, res) => {
         if (hiringFreshers !== undefined) query.hiringFreshers = hiringFreshers === 'true'
         if (workMode) query.workModes = workMode // Matches if workMode is in the array
         if (location) {
-            // Case insensitive search for location
+
             query.locations = { $regex: new RegExp(location, 'i') }
         }
 
-        // Filter by user's experience (e.g. if user has 2 years, find companies where min <= 2 <= max)
         if (experience) {
             const expYear = parseFloat(experience)
             if (!isNaN(expYear)) {
@@ -74,7 +70,6 @@ export const getAllCompanies = async (req, res) => {
             if (maxPackage) query['averagePackage.max'].$lte = parseInt(maxPackage)
         }
 
-        // Name Search (Optimized with Regex)
         if (req.query.search) {
             query.name = { $regex: new RegExp(req.query.search, 'i') }
         }
@@ -100,13 +95,17 @@ export const getAllCompanies = async (req, res) => {
             },
         }
 
-        // Cache for 5 minutes
         try {
             await redis.setex(cacheKey, 300, JSON.stringify(response))
             console.log(`💾 Cached: ${cacheKey} (TTL: 300s)`)
         } catch (cacheError) {
             console.error('Cache write error:', cacheError)
         }
+
+        res.set({
+            'Cache-Control': 'public, max-age=300, stale-while-revalidate=600', // 5 min cache, 10 min stale
+            'Vary': 'Accept-Encoding'
+        })
 
         res.json(response)
     } catch (error) {
@@ -119,13 +118,11 @@ export const getAllCompanies = async (req, res) => {
     }
 }
 
-// Get suggested companies for user
 export const getSuggestedCompanies = async (req, res) => {
     try {
         const userId = req.user._id
         const cacheKey = `companies:suggested:${userId}`
 
-        // Try to get from cache
         try {
             const cachedData = await redis.get(cacheKey)
             if (cachedData) {
@@ -138,11 +135,9 @@ export const getSuggestedCompanies = async (req, res) => {
 
         console.log(`⚠️  Cache MISS: ${cacheKey}`)
 
-        // Assume user is authenticated (middleware ensures req.user)
         const user = await User.findById(userId)
         const query = { isActive: true }
 
-        // 1. Match Experience
         if (user.experience) {
             const expLower = user.experience.toLowerCase()
             if (expLower.includes('fresher')) {
@@ -151,14 +146,13 @@ export const getSuggestedCompanies = async (req, res) => {
                 const match = user.experience.match(/\d+/)
                 if (match) {
                     const exp = parseInt(match[0])
-                    // Find companies where their requirement covers user's experience
+
                     query['experienceRequired.min'] = { $lte: exp }
                     query['experienceRequired.max'] = { $gte: exp }
                 }
             }
         }
 
-        // 2. Fallback: If no strict criteria or user has undefined profile, show High Hiring companies
         if (Object.keys(query).length === 1) { // Only isActive is set
             query.isHiring = true
         }
@@ -173,7 +167,6 @@ export const getSuggestedCompanies = async (req, res) => {
             data: companies,
         }
 
-        // Cache for 15 minutes
         try {
             await redis.setex(cacheKey, 900, JSON.stringify(response))
             console.log(`💾 Cached: ${cacheKey} (TTL: 900s)`)
@@ -192,18 +185,15 @@ export const getSuggestedCompanies = async (req, res) => {
     }
 }
 
-// Get single company details
 export const getCompany = async (req, res) => {
     try {
         const { id } = req.params
         const userId = req.user?._id
 
-        // Cache key for company data (shared across all users)
         const companyCacheKey = `company:detail:${id}`
 
         let company
 
-        // Try to get company from cache
         try {
             const cachedCompany = await redis.get(companyCacheKey)
             if (cachedCompany) {
@@ -217,14 +207,12 @@ export const getCompany = async (req, res) => {
         if (!company) {
             console.log(`⚠️  Cache MISS: ${companyCacheKey}`)
 
-            // Build query - if id is a valid ObjectId, search both _id and slug
-            // Otherwise, only search by slug
             let query
             if (id.match(/^[0-9a-fA-F]{24}$/)) {
-                // Valid ObjectId format
+
                 query = { $or: [{ _id: id }, { slug: id }] }
             } else {
-                // Not a valid ObjectId, search only by slug
+
                 query = { slug: id }
             }
 
@@ -239,7 +227,6 @@ export const getCompany = async (req, res) => {
                 })
             }
 
-            // Cache company for 30 minutes (very stable data)
             try {
                 await redis.setex(companyCacheKey, 1800, JSON.stringify(company))
                 console.log(`💾 Cached: ${companyCacheKey} (TTL: 1800s)`)
@@ -248,7 +235,6 @@ export const getCompany = async (req, res) => {
             }
         }
 
-        // Get user's application status if authenticated (not cached)
         let userApplication = null
         if (userId) {
             userApplication = await CompanyApplication.findOne({
@@ -272,7 +258,6 @@ export const getCompany = async (req, res) => {
     }
 }
 
-// Apply to a company
 export const applyToCompany = async (req, res) => {
     try {
         const { id } = req.params
@@ -286,7 +271,6 @@ export const applyToCompany = async (req, res) => {
             })
         }
 
-        // Check if user already applied
         const existingApplication = await CompanyApplication.findOne({
             user: req.user._id,
             company: company._id,
@@ -299,7 +283,6 @@ export const applyToCompany = async (req, res) => {
             })
         }
 
-        // Get user's resume if not provided
         const user = await User.findById(req.user._id)
         const finalResumeUrl = resumeUrl || user.resume?.url
 
@@ -310,7 +293,6 @@ export const applyToCompany = async (req, res) => {
             })
         }
 
-        // Create application
         const application = new CompanyApplication({
             user: req.user._id,
             company: company._id,
@@ -327,12 +309,8 @@ export const applyToCompany = async (req, res) => {
             })),
         })
 
-        // TODO: Analyze resume
-        // application.resumeAnalysis = await analyzeResume(finalResumeUrl, role)
-
         await application.save()
 
-        // Update company stats
         company.stats.totalApplicants += 1
         await company.save()
 
@@ -351,7 +329,6 @@ export const applyToCompany = async (req, res) => {
     }
 }
 
-// Get user's applications
 export const getUserApplications = async (req, res) => {
     try {
         const { status, page = 1, limit = 10 } = req.query
@@ -389,7 +366,6 @@ export const getUserApplications = async (req, res) => {
     }
 }
 
-// Get specific application details
 export const getApplicationDetails = async (req, res) => {
     try {
         const { applicationId } = req.params
@@ -420,7 +396,6 @@ export const getApplicationDetails = async (req, res) => {
     }
 }
 
-// Start interview round
 export const startInterviewRound = async (req, res) => {
     try {
         const { applicationId } = req.params
@@ -453,14 +428,12 @@ export const startInterviewRound = async (req, res) => {
             })
         }
 
-        // Update round status
         round.status = 'in-progress'
         round.startedAt = new Date()
         application.status = 'in-progress'
 
         await application.save()
 
-        // Get questions for this round from company pipeline
         const companyRound = application.company.hiringPipeline[nextRoundIndex]
 
         res.json({
@@ -482,7 +455,6 @@ export const startInterviewRound = async (req, res) => {
     }
 }
 
-// Submit round completion
 export const submitRound = async (req, res) => {
     try {
         const { applicationId } = req.params
@@ -508,21 +480,18 @@ export const submitRound = async (req, res) => {
             })
         }
 
-        // Update round
         round.status = 'completed'
         round.completedAt = new Date()
         round.score = score
         round.questionsAttempted = questionsAttempted
 
-        // Check if passed (simplified logic)
         const passingScore = application.company.hiringPipeline[roundNumber - 1].passingCriteria?.minimumScore || 50
         round.passed = score >= passingScore
 
         if (round.passed) {
-            // Move to next round
+
             application.currentRound += 1
 
-            // Check if all rounds completed
             if (application.currentRound >= application.rounds.length) {
                 application.status = 'selected'
                 application.finalResult = {
@@ -561,13 +530,11 @@ export const submitRound = async (req, res) => {
     }
 }
 
-// Admin: Create company
 export const createCompany = async (req, res) => {
     try {
         const company = new Company(req.body)
         await company.save()
 
-        // Invalidate company caches
         await invalidateCompanyCache()
 
         res.status(201).json({
@@ -585,7 +552,6 @@ export const createCompany = async (req, res) => {
     }
 }
 
-// Admin: Update company
 export const updateCompany = async (req, res) => {
     try {
         const { id } = req.params
@@ -602,7 +568,6 @@ export const updateCompany = async (req, res) => {
             })
         }
 
-        // Invalidate caches for this specific company
         await invalidateCompanyCache(id)
 
         res.json({
@@ -620,7 +585,6 @@ export const updateCompany = async (req, res) => {
     }
 }
 
-// Admin: Link DSA problem to company (role-specific)
 export const linkDSAProblem = async (req, res) => {
     try {
         const { id } = req.params
@@ -640,7 +604,6 @@ export const linkDSAProblem = async (req, res) => {
             })
         }
 
-        // Verify problem exists
         const problem = await DSAProblem.findById(problemId)
         if (!problem) {
             return res.status(404).json({
@@ -665,7 +628,6 @@ export const linkDSAProblem = async (req, res) => {
             })
         }
 
-        // Validate roundNumber if provided
         if (roundNumber !== undefined && roundNumber !== null) {
             const roundExists = company.rolesData[roleIndex].hiringPipeline.some(
                 r => r.roundNumber === roundNumber
@@ -678,7 +640,6 @@ export const linkDSAProblem = async (req, res) => {
             }
         }
 
-        // Add to role-specific linkedDSAProblems
         company.rolesData[roleIndex].linkedDSAProblems.push({
             problem: problemId,
             frequency: frequency || 'Medium',
@@ -689,12 +650,10 @@ export const linkDSAProblem = async (req, res) => {
 
         await company.save()
 
-        // Sync: Add company to DSA problem's companies list
         await DSAProblem.findByIdAndUpdate(problemId, {
             $addToSet: { companies: company._id }
         })
 
-        // Populate and return
         const updatedCompany = await Company.findById(id)
             .populate('rolesData.linkedDSAProblems.problem')
 
@@ -713,7 +672,6 @@ export const linkDSAProblem = async (req, res) => {
     }
 }
 
-// Admin: Unlink DSA problem from company
 export const unlinkDSAProblem = async (req, res) => {
     try {
         const { id, linkId } = req.params
@@ -756,7 +714,6 @@ export const unlinkDSAProblem = async (req, res) => {
         company.rolesData[roleIndex].linkedDSAProblems.splice(problemIndex, 1)
         await company.save()
 
-        // Remove from DSA Problem's companies list
         if (problemId) {
             await DSAProblem.findByIdAndUpdate(problemId, {
                 $pull: { companies: id }
@@ -777,7 +734,6 @@ export const unlinkDSAProblem = async (req, res) => {
     }
 }
 
-// Admin: Link Dev problem to company (role-specific)
 export const linkDevProblem = async (req, res) => {
     try {
         const { id } = req.params
@@ -797,7 +753,6 @@ export const linkDevProblem = async (req, res) => {
             })
         }
 
-        // Verify problem exists
         const problem = await DevelopmentProblem.findById(problemId)
         if (!problem) {
             return res.status(404).json({
@@ -822,7 +777,6 @@ export const linkDevProblem = async (req, res) => {
             })
         }
 
-        // Validate roundNumber if provided
         if (roundNumber !== undefined && roundNumber !== null) {
             const roundExists = company.rolesData[roleIndex].hiringPipeline.some(
                 r => r.roundNumber === roundNumber
@@ -835,7 +789,6 @@ export const linkDevProblem = async (req, res) => {
             }
         }
 
-        // Add to role-specific linkedDevProblems
         company.rolesData[roleIndex].linkedDevProblems.push({
             problem: problemId,
             frequency: frequency || 'Medium',
@@ -846,7 +799,6 @@ export const linkDevProblem = async (req, res) => {
 
         await company.save()
 
-        // Populate and return
         const updatedCompany = await Company.findById(id)
             .populate('rolesData.linkedDevProblems.problem')
 
@@ -865,7 +817,6 @@ export const linkDevProblem = async (req, res) => {
     }
 }
 
-// Admin: Unlink Dev problem from company
 export const unlinkDevProblem = async (req, res) => {
     try {
         const { id, linkId } = req.params
@@ -921,7 +872,6 @@ export const unlinkDevProblem = async (req, res) => {
     }
 }
 
-// Admin: Add interview question to company (role-specific)
 export const addInterviewQuestion = async (req, res) => {
     try {
         const { id } = req.params
@@ -957,7 +907,6 @@ export const addInterviewQuestion = async (req, res) => {
             })
         }
 
-        // Validate roundNumber if provided
         if (roundNumber !== undefined && roundNumber !== null) {
             const roundExists = company.rolesData[roleIndex].hiringPipeline.some(
                 r => r.roundNumber === roundNumber
@@ -970,7 +919,6 @@ export const addInterviewQuestion = async (req, res) => {
             }
         }
 
-        // Add to role-specific interviewQuestions
         company.rolesData[roleIndex].interviewQuestions.push({
             question,
             type,
@@ -997,7 +945,6 @@ export const addInterviewQuestion = async (req, res) => {
     }
 }
 
-// Admin: Remove interview question from company
 export const removeInterviewQuestion = async (req, res) => {
     try {
         const { id, questionId } = req.params
@@ -1053,7 +1000,6 @@ export const removeInterviewQuestion = async (req, res) => {
     }
 }
 
-// Admin: Get company with all linked problems populated
 export const getCompanyWithProblems = async (req, res) => {
     try {
         const { id } = req.params
@@ -1083,12 +1029,10 @@ export const getCompanyWithProblems = async (req, res) => {
     }
 }
 
-// Admin: Delete company (soft delete)
 export const deleteCompany = async (req, res) => {
     try {
         const { id } = req.params
 
-        // Hard delete - permanently remove from database
         const company = await Company.findByIdAndDelete(id)
 
         if (!company) {
@@ -1112,11 +1056,6 @@ export const deleteCompany = async (req, res) => {
     }
 }
 
-// ============================================
-// PATTERN MANAGEMENT
-// ============================================
-
-// Admin: Add pattern to company
 export const addPattern = async (req, res) => {
     try {
         const { id } = req.params
@@ -1163,7 +1102,6 @@ export const addPattern = async (req, res) => {
     }
 }
 
-// Admin: Update pattern
 export const updatePattern = async (req, res) => {
     try {
         const { id, patternId } = req.params
@@ -1213,7 +1151,6 @@ export const updatePattern = async (req, res) => {
     }
 }
 
-// Admin: Remove pattern from company
 export const removePattern = async (req, res) => {
     try {
         const { id, patternId } = req.params

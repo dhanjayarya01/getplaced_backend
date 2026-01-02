@@ -1,10 +1,5 @@
 import { MockInterview } from '../../models/index.js'
 
-/**
- * @route   GET /api/admin/mock-interviews
- * @desc    Get all mock interviews
- * @access  Admin
- */
 export const getAllMockInterviews = async (req, res) => {
     try {
         const { codingType, isActive, page = 1, limit = 20 } = req.query
@@ -40,11 +35,6 @@ export const getAllMockInterviews = async (req, res) => {
     }
 }
 
-/**
- * @route   GET /api/admin/mock-interviews/:id
- * @desc    Get single mock interview
- * @access  Admin
- */
 export const getMockInterviewById = async (req, res) => {
     try {
         const mockInterview = await MockInterview.findById(req.params.id)
@@ -70,11 +60,6 @@ export const getMockInterviewById = async (req, res) => {
     }
 }
 
-/**
- * @route   POST /api/admin/mock-interviews
- * @desc    Create new mock interview
- * @access  Admin
- */
 export const createMockInterview = async (req, res) => {
     try {
         const mockInterview = new MockInterview(req.body)
@@ -95,11 +80,6 @@ export const createMockInterview = async (req, res) => {
     }
 }
 
-/**
- * @route   PUT /api/admin/mock-interviews/:id
- * @desc    Update mock interview
- * @access  Admin
- */
 export const updateMockInterview = async (req, res) => {
     try {
         const mockInterview = await MockInterview.findByIdAndUpdate(req.params.id, req.body, {
@@ -129,11 +109,6 @@ export const updateMockInterview = async (req, res) => {
     }
 }
 
-/**
- * @route   DELETE /api/admin/mock-interviews/:id
- * @desc    Delete mock interview
- * @access  Admin
- */
 export const deleteMockInterview = async (req, res) => {
     try {
         const mockInterview = await MockInterview.findByIdAndDelete(req.params.id)
@@ -159,11 +134,6 @@ export const deleteMockInterview = async (req, res) => {
     }
 }
 
-/**
- * @route   PATCH /api/admin/mock-interviews/:id/toggle-active
- * @desc    Toggle active status
- * @access  Admin
- */
 export const toggleActiveStatus = async (req, res) => {
     try {
         const mockInterview = await MockInterview.findById(req.params.id)

@@ -1,9 +1,6 @@
 import { UserProgress } from '../models/index.js'
 import redis from '../config/redis.js'
 
-/**
- * Manually update user progress for testing
- */
 export const manualUpdateProgress = async (req, res) => {
     try {
         const { interviewId, interviewType, currentStage, overallScore, totalAttempts } = req.body
@@ -55,9 +52,6 @@ export const manualUpdateProgress = async (req, res) => {
     }
 }
 
-/**
- * Get user progress
- */
 export const getUserProgress = async (req, res) => {
     try {
         const userId = req.user._id

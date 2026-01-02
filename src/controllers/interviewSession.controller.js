@@ -1,8 +1,5 @@
 import { MockInterviewSession, MockInterview, Resume, UserProgress } from '../models/index.js'
 
-/**
- * Start new interview session
- */
 export const startSession = async (req, res) => {
     try {
         const { interviewId, difficulty, strictness, language, voiceId } = req.body
@@ -17,28 +14,23 @@ export const startSession = async (req, res) => {
             userId
         })
 
-        // Get interview details
         const interview = await MockInterview.findById(interviewId)
         if (!interview) {
             return res.status(404).json({ success: false, message: 'Interview not found' })
         }
 
-        // Get user's resume
         const resume = await Resume.findOne({ userId: userId }).sort({ createdAt: -1 })
 
-        // Log resume data for debugging
         console.log('Resume found:', resume ? 'Yes' : 'No')
         if (resume) {
             console.log('Resume parsedData:', JSON.stringify(resume.parsedData, null, 2))
         }
 
-        // Get or create user progress
         let userProgress = await UserProgress.findOne({ user: userId })
         if (!userProgress) {
             userProgress = await UserProgress.create({ user: userId })
         }
 
-        // Debug: Show all interview progress
         console.log('\n=== STARTING INTERVIEW ===')
         console.log('Interview ID from request:', interviewId)
         console.log('User has', userProgress.interviewProgress.length, 'interview progress entries')
@@ -50,7 +42,6 @@ export const startSession = async (req, res) => {
             })
         })
 
-        // Find existing progress for this interview
         const existingProgress = userProgress.interviewProgress.find(
             p => p.interviewId.toString() === interviewId.toString()
         )
@@ -71,7 +62,6 @@ export const startSession = async (req, res) => {
         console.log('Starting at stage:', currentStage)
         console.log('=========================\n')
 
-        // Create session
         const session = await MockInterviewSession.create({
             user: userId,
             interviewTemplate: interviewId,
@@ -83,7 +73,6 @@ export const startSession = async (req, res) => {
             voiceId: voiceId || '21m00Tcm4TlvDq8ikWAM' // Rachel - default
         })
 
-        // Generate dynamic system prompt with progress context
         console.log('🔍 GENERATING PROMPT WITH:', {
             language: language || 'English',
             voiceId: voiceId || '21m00Tcm4TlvDq8ikWAM',
@@ -91,7 +80,6 @@ export const startSession = async (req, res) => {
             hasProgress: !!existingProgress
         })
 
-        // Generate system prompt based on interview type
         const systemPrompt = interview.codingType
             ? generateCodingInterviewPrompt({
                 interview,
@@ -136,9 +124,6 @@ export const startSession = async (req, res) => {
     }
 }
 
-/**
- * Update session with score
- */
 export const updateScore = async (req, res) => {
     try {
         const { id } = req.params
@@ -149,7 +134,6 @@ export const updateScore = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Session not found' })
         }
 
-        // Add response
         session.responses.push({
             stage,
             question: transcript?.aiQuestion || '',
@@ -159,7 +143,6 @@ export const updateScore = async (req, res) => {
             timeSpent: 0
         })
 
-        // Determine progression
         let canProgress = false
         let nextStage = stage
 
@@ -173,20 +156,17 @@ export const updateScore = async (req, res) => {
             canProgress = false // Practice mode
         }
 
-        // Check if completed
         const totalStages = session.interviewTemplate.interviewStages.length
         if (nextStage > totalStages) {
             session.status = 'completed'
             session.completedAt = new Date()
 
-            // Calculate overall score
             const avgScore = session.responses.reduce((sum, r) => sum + r.score, 0) / session.responses.length
             session.overallScore = avgScore
         }
 
         await session.save()
 
-        // ALWAYS update user progress after each stage attempt
         await updateUserProgress(
             session.user,
             session.interviewTemplate._id,
@@ -212,9 +192,6 @@ export const updateScore = async (req, res) => {
     }
 }
 
-/**
- * Get session details
- */
 export const getSession = async (req, res) => {
     try {
         const { id } = req.params
@@ -226,7 +203,6 @@ export const getSession = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Session not found' })
         }
 
-        // Get user's resume to regenerate system prompt
         const resume = await Resume.findOne({ userId: session.user._id }).sort({ createdAt: -1 })
 
         console.log('Resume found for session:', resume ? 'Yes' : 'No')
@@ -234,17 +210,14 @@ export const getSession = async (req, res) => {
             console.log('Resume name:', resume.parsedData?.name)
         }
 
-        // Get user's progress for this interview
         const userProgress = await UserProgress.findOne({ user: session.user._id })
         const existingProgress = userProgress?.interviewProgress.find(
             p => p.interviewId.toString() === session.interviewTemplate._id.toString()
         )
 
-        // Get interview details
         const interview = session.interviewTemplate
         const currentStage = interview.interviewStages.find(s => s.stage === session.currentStage)
 
-        // Regenerate system prompt with resume data, language preference, AND progress
         const systemPrompt = generateSystemPrompt({
             interview,
             stage: currentStage,
@@ -268,15 +241,11 @@ export const getSession = async (req, res) => {
     }
 }
 
-/**
- * Generate enhanced system prompt with multi-stage flow
- */
 function generateSystemPrompt({ interview, stage, resume, difficulty, strictness, progress, language }) {
     const userName = resume?.name || 'Candidate'
     const firstName = userName.split(' ')[0] || 'there'
     const interviewType = interview.codingType ? 'Technical Coding' : 'Behavioral'
 
-    // Language instruction - MUST BE FIRST AND PROMINENT
     console.log('🔍 LANGUAGE CHECK:', { language, isNotEnglish: language !== 'English' })
 
     const languageInstruction = language && language !== 'English'
@@ -340,7 +309,6 @@ Keep it warm, friendly, and conversational - not robotic!
     console.log('🔍 LANGUAGE INSTRUCTION LENGTH:', languageInstruction.length)
     console.log('🔍 LANGUAGE INSTRUCTION PREVIEW:', languageInstruction.substring(0, 200))
 
-    // Debug progress context
     console.log('🔍 PROGRESS CONTEXT:', {
         hasProgress: !!progress,
         totalAttempts: progress?.totalAttempts,
@@ -348,20 +316,15 @@ Keep it warm, friendly, and conversational - not robotic!
         areasToWorkOn: progress?.areasToWorkOn?.length
     })
 
-    // Build resume callout separately to avoid nested template literals
     const resumeCallout = resume ? getResumeCallout(resume) : ''
     const resumeText = resume ? ` - ${resumeCallout}. That's really cool!` : ' and I\'m excited to learn more about you!'
 
-    // Build resume reference text
     const resumeRefText = resume ? getResumeReferenceText(resume) : ''
 
-    // Build topics naturally
     const topicsText = formatTopicsNaturally(stage.topics)
 
-    // Build strictness explanation
     const strictnessText = getStrictnessExplanation(strictness)
 
-    // Build progress context
     let progressContext = ''
     if (progress && progress.stageScores && progress.stageScores.length > 0) {
         const previousStages = progress.stageScores
@@ -386,21 +349,16 @@ Keep it warm, friendly, and conversational - not robotic!
         }
     }
 
-    // Build role description
     const roleDesc = interview.codingType ?
         `Think of me as a friendly technical interviewer who's genuinely interested in understanding how you solve problems. I'll ask you coding questions, and I'll want to understand your thought process, edge cases, and optimization approach.` :
         `Think of me as a friendly interviewer who wants to understand your experiences using the STAR method (Situation, Task, Action, Result). I'll probe deeper to really understand how you think and handle situations!`
 
-    // Build interview guidance
     const interviewGuidance = getInterviewQuestionGuidance(interview.codingType, stage, resume, strictness)
 
-    // Build resume highlights
     const resumeHighlights = resume ? extractResumeHighlights(resume) : ''
 
-    // Build personality guidance
     const personalityGuidance = strictness >= 7 ? 'Maintain high standards and probe deeply' : strictness >= 4 ? 'Balance encouragement with thorough assessment' : 'Be very supportive and guide the candidate'
 
-    // Build previous progress greeting (if exists)
     let previousProgressGreeting = ''
     if (progress && progress.totalAttempts && progress.totalAttempts >= 1) {
         console.log('✅ BUILDING PROGRESS GREETING - User has previous attempts:', progress.totalAttempts)
@@ -577,7 +535,6 @@ CRITICAL REMINDERS:
 ✓ Make candidate feel comfortable and valued
 ✓ Don't just start the interview immediately when user says hello`
 
-    // Log the prompt for debugging
     console.log('\n=== ENHANCED SYSTEM PROMPT GENERATED ===')
     console.log(prompt)
     console.log('================================\n')
@@ -585,15 +542,10 @@ CRITICAL REMINDERS:
     return prompt
 }
 
-/**
- * Generate CODING INTERVIEW specific prompt
- * Focus: Force AI to use function calls for ALL problem interactions
- */
 function generateCodingInterviewPrompt({ interview, stage, resume, difficulty, strictness, progress, language }) {
     const userName = resume?.name || 'Candidate'
     const firstName = userName.split(' ')[0] || 'there'
 
-    // Build previous progress greeting
     let previousProgressGreeting = ''
     if (progress && progress.totalAttempts && progress.totalAttempts >= 1) {
         const goodPoints = progress.areasGoodIn && progress.areasGoodIn.length > 0
@@ -782,8 +734,6 @@ CANDIDATE INFO:
     return prompt
 }
 
-// Helper Functions for Enhanced Prompt Generation
-
 function extractResumeHighlights(resume) {
     if (!resume) return ''
 
@@ -795,7 +745,6 @@ function extractResumeHighlights(resume) {
         if (resume.experience.length > 1) text += `\n- ${resume.experience.length - 1} other role(s)`
     }
 
-    // Flatten skills from nested structure
     const allSkills = []
     if (resume.skills) {
         if (resume.skills.languages) allSkills.push(...resume.skills.languages)
@@ -875,9 +824,6 @@ ${resume?.projects?.[0] ? `- Or: "When building ${resume.projects[0].name}..."` 
     }
 }
 
-/**
- * Update user progress after interview
- */
 async function updateUserProgress(userId, interviewId, overallScore, responses, currentStage, isCompleted) {
     let userProgress = await UserProgress.findOne({ user: userId })
 
@@ -889,7 +835,6 @@ async function updateUserProgress(userId, interviewId, overallScore, responses, 
         p => p.interviewId.toString() === interviewId.toString()
     )
 
-    // Extract detailed feedback from the last response (final scoring)
     let areasGoodIn = []
     let areasToWorkOn = []
 
@@ -897,7 +842,6 @@ async function updateUserProgress(userId, interviewId, overallScore, responses, 
         const lastResponse = responses[responses.length - 1]
         const feedbackText = lastResponse.feedback || ''
 
-        // Parse "What You Did Well" section
         const goodMatch = feedbackText.match(/What You Did Well[:\s]*([\s\S]*?)(?=Top.*Areas for Improvement|Areas for Improvement|$)/i)
         if (goodMatch && goodMatch[1]) {
             const goodPoints = goodMatch[1]
@@ -907,7 +851,6 @@ async function updateUserProgress(userId, interviewId, overallScore, responses, 
             areasGoodIn = goodPoints.slice(0, 3) // Max 3 points
         }
 
-        // Parse "Areas for Improvement" section
         const improveMatch = feedbackText.match(/(?:Top.*)?Areas for Improvement[:\s]*([\s\S]*?)(?=Next Steps|$)/i)
         if (improveMatch && improveMatch[1]) {
             const improvePoints = improveMatch[1]

@@ -1,6 +1,5 @@
 import { User } from '../models/index.js'
 
-// Get user profile
 export const getUserProfile = async (req, res) => {
     try {
         const user = await User.findById(req.user._id)
@@ -28,7 +27,6 @@ export const getUserProfile = async (req, res) => {
     }
 }
 
-// Update user profile
 export const updateUserProfile = async (req, res) => {
     try {
         const allowedUpdates = [
@@ -68,7 +66,6 @@ export const updateUserProfile = async (req, res) => {
     }
 }
 
-// Upload resume
 export const uploadResume = async (req, res) => {
     try {
         const { resumeUrl } = req.body
@@ -87,11 +84,6 @@ export const uploadResume = async (req, res) => {
             uploadedAt: new Date(),
         }
 
-        // TODO: Analyze resume
-        // const analysis = await analyzeResume(resumeUrl)
-        // user.resume.analysisScore = analysis.score
-        // user.resume.recommendations = analysis.recommendations
-
         await user.save()
 
         res.json({
@@ -109,7 +101,6 @@ export const uploadResume = async (req, res) => {
     }
 }
 
-// Get user statistics
 export const getUserStats = async (req, res) => {
     try {
         const user = await User.findById(req.user._id).select('stats')
@@ -128,7 +119,6 @@ export const getUserStats = async (req, res) => {
     }
 }
 
-// Update user streak
 export const updateStreak = async (req, res) => {
     try {
         const user = await User.findById(req.user._id)
@@ -145,23 +135,22 @@ export const updateStreak = async (req, res) => {
             const daysDiff = Math.floor((today - lastActive) / (1000 * 60 * 60 * 24))
 
             if (daysDiff === 0) {
-                // Already active today
+
                 return res.json({
                     success: true,
                     data: user.stats,
                 })
             } else if (daysDiff === 1) {
-                // Consecutive day
+
                 user.stats.currentStreak += 1
             } else {
-                // Streak broken
+
                 user.stats.currentStreak = 1
             }
         } else {
             user.stats.currentStreak = 1
         }
 
-        // Update longest streak
         if (user.stats.currentStreak > user.stats.longestStreak) {
             user.stats.longestStreak = user.stats.currentStreak
         }
@@ -183,7 +172,6 @@ export const updateStreak = async (req, res) => {
     }
 }
 
-// Get leaderboard
 export const getLeaderboard = async (req, res) => {
     try {
         const { type = 'xp', limit = 100 } = req.query

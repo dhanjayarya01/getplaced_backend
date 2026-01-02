@@ -10,9 +10,6 @@ import {
     MockInterviewSession,
 } from '../models/index.js'
 
-// ==================== DASHBOARD STATS ====================
-
-// Get admin dashboard statistics
 export const getAdminDashboard = async (req, res) => {
     try {
         const stats = {
@@ -51,9 +48,6 @@ export const getAdminDashboard = async (req, res) => {
     }
 }
 
-// ==================== DATA AGGREGATIONS ====================
-
-// Get available filters for DSA problems
 export const getDSAFilters = async (req, res) => {
     try {
         const filters = await DSAProblem.aggregate([
@@ -98,7 +92,6 @@ export const getDSAFilters = async (req, res) => {
     }
 }
 
-// Get available filters for Development problems
 export const getDevelopmentFilters = async (req, res) => {
     try {
         const filters = await DevelopmentProblem.aggregate([
@@ -146,7 +139,6 @@ export const getDevelopmentFilters = async (req, res) => {
     }
 }
 
-// Get available filters for Mock Interviews
 export const getMockInterviewFilters = async (req, res) => {
     try {
         const filters = await MockInterview.aggregate([
@@ -193,7 +185,6 @@ export const getMockInterviewFilters = async (req, res) => {
     }
 }
 
-// Get company filters
 export const getCompanyFilters = async (req, res) => {
     try {
         const filters = await Company.aggregate([
@@ -241,9 +232,6 @@ export const getCompanyFilters = async (req, res) => {
     }
 }
 
-// ==================== USER MANAGEMENT ====================
-
-// Get all users (admin only)
 export const getAllUsers = async (req, res) => {
     try {
         const { page = 1, limit = 20, role, isActive } = req.query
@@ -282,7 +270,6 @@ export const getAllUsers = async (req, res) => {
     }
 }
 
-// Update user role (admin only)
 export const updateUserRole = async (req, res) => {
     try {
         const { userId } = req.params
@@ -323,7 +310,6 @@ export const updateUserRole = async (req, res) => {
     }
 }
 
-// Deactivate user (admin only)
 export const deactivateUser = async (req, res) => {
     try {
         const { userId } = req.params
@@ -356,25 +342,21 @@ export const deactivateUser = async (req, res) => {
     }
 }
 
-// Get platform statistics
 export const getPlatformStats = async (req, res) => {
     try {
-        // User stats
+
         const totalUsers = await User.countDocuments()
         const activeUsers = await User.countDocuments({ isActive: true })
 
-        // Problem stats
         const dsaProblems = await DSAProblem.countDocuments({ isActive: true })
         const devProblems = await DevelopmentProblem.countDocuments({ isActive: true })
         const mockQuestions = await MockInterview.countDocuments({ isActive: true })
 
-        // Activity stats
         const totalSubmissions = await Submission.countDocuments()
         const acceptedSubmissions = await Submission.countDocuments({ isAccepted: true })
         const totalApplications = await CompanyApplication.countDocuments()
         const completedSessions = await MockInterviewSession.countDocuments({ status: 'completed' })
 
-        // Top users by XP
         const topUsers = await User.find({ isActive: true })
             .select('name profilePicture stats.totalXP')
             .sort('-stats.totalXP')

@@ -1,9 +1,6 @@
 import redis from '../config/redis.js'
 import { invalidateUserCache } from '../utils/cache.utils.js'
 
-/**
- * Cache metrics tracking
- */
 let cacheMetrics = {
     hits: 0,
     misses: 0,
@@ -11,36 +8,23 @@ let cacheMetrics = {
     lastReset: new Date(),
 }
 
-/**
- * Track cache hit
- */
 export const recordCacheHit = () => {
     cacheMetrics.hits++
 }
 
-/**
- * Track cache miss
- */
 export const recordCacheMiss = () => {
     cacheMetrics.misses++
 }
 
-/**
- * Track cache error
- */
 export const recordCacheError = () => {
     cacheMetrics.errors++
 }
 
-/**
- * Get cache statistics
- */
 export const getCacheStats = async (req, res) => {
     try {
         const info = await redis.info('stats')
         const memory = await redis.info('memory')
 
-        // Parse Redis info
         const parseInfo = (infoStr) => {
             const lines = infoStr.split('\r\n')
             const stats = {}
@@ -58,11 +42,9 @@ export const getCacheStats = async (req, res) => {
         const statsData = parseInfo(info)
         const memoryData = parseInfo(memory)
 
-        // Calculate hit ratio
         const totalRequests = cacheMetrics.hits + cacheMetrics.misses
         const hitRatio = totalRequests > 0 ? (cacheMetrics.hits / totalRequests * 100).toFixed(2) : 0
 
-        // Get Redis key count
         const dbsize = await redis.dbsize()
 
         res.json({
@@ -100,9 +82,6 @@ export const getCacheStats = async (req, res) => {
     }
 }
 
-/**
- * Reset cache statistics
- */
 export const resetCacheStats = (req, res) => {
     cacheMetrics = {
         hits: 0,
@@ -117,9 +96,6 @@ export const resetCacheStats = (req, res) => {
     })
 }
 
-/**
- * Get Redis health check
- */
 export const getCacheHealth = async (req, res) => {
     try {
         const start = Date.now()
@@ -170,17 +146,12 @@ export const getCacheHealth = async (req, res) => {
     }
 }
 
-/**
- * Cache warming utility - Preload popular content
- */
 export const warmCache = async (req, res) => {
     try {
         const warmedKeys = []
 
-        // Import models
         const { DSAProblem, Company, MockInterview } = await import('../models/index.js')
 
-        // 1. Warm popular DSA problems (top 20 by acceptance rate)
         const popularDSA = await DSAProblem.find({ isActive: true })
             .sort('-acceptance')
             .limit(20)
@@ -193,7 +164,6 @@ export const warmCache = async (req, res) => {
             warmedKeys.push(cacheKey)
         }
 
-        // 2. Warm top companies (top 15 by applicants)
         const popularCompanies = await Company.find({ isActive: true })
             .sort('-stats.totalApplicants')
             .limit(15)
@@ -206,7 +176,6 @@ export const warmCache = async (req, res) => {
             warmedKeys.push(cacheKey)
         }
 
-        // 3. Warm popular mock interviews
         const popularMockInterviews = await MockInterview.find({ isActive: true })
             .sort('-createdAt')
             .limit(10)
@@ -237,14 +206,10 @@ export const warmCache = async (req, res) => {
     }
 }
 
-/**
- * Clear all cache (use with caution!)
- */
 export const clearAllCache = async (req, res) => {
     try {
         await redis.flushdb()
 
-        // Reset metrics
         cacheMetrics = {
             hits: 0,
             misses: 0,

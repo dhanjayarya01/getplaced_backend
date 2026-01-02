@@ -4,7 +4,6 @@ import codeWrapperService from '../services/codeWrapper.service.js'
 import redis from '../config/redis.js'
 import { generateCacheKey, invalidateDSACache, invalidateUserCache } from '../utils/cache.utils.js'
 
-// Get all DSA problems with filters
 export const getAllDSAProblems = async (req, res) => {
     try {
         const {
@@ -21,7 +20,6 @@ export const getAllDSAProblems = async (req, res) => {
 
         const userId = req.user?._id
 
-        // Generate cache key
         const cacheKey = generateCacheKey('dsa:all', {
             difficulty,
             dataStructure,
@@ -32,10 +30,9 @@ export const getAllDSAProblems = async (req, res) => {
             sort,
             search,
             isActive,
-            userId: userId?.toString(), // Include user ID for personalized cache
+
         })
 
-        // Try to get from cache
         try {
             const cachedData = await redis.get(cacheKey)
             if (cachedData) {
@@ -50,12 +47,10 @@ export const getAllDSAProblems = async (req, res) => {
 
         const query = {}
 
-        // Filter by active status (for public view)
         if (isActive !== undefined) {
             query.isActive = isActive === 'true'
         }
 
-        // Search by title, problem number, data structures, or patterns
         if (search && search.trim()) {
             const searchRegex = { $regex: search.trim(), $options: 'i' }
             const searchConditions = [
@@ -64,7 +59,6 @@ export const getAllDSAProblems = async (req, res) => {
                 { patterns: searchRegex },
             ]
 
-            // If search is a number, include problemNumber search
             const searchNum = parseInt(search.trim())
             if (!isNaN(searchNum)) {
                 searchConditions.push({ problemNumber: searchNum })
@@ -88,13 +82,11 @@ export const getAllDSAProblems = async (req, res) => {
             query.patterns = patterns.length > 1 ? { $in: patterns } : pattern
         }
 
-        // If user is authenticated, get their solved problems
         let solvedProblemIds = []
         if (req.user) {
             const user = await User.findById(req.user._id).select('solvedDSAProblems')
             solvedProblemIds = user?.solvedDSAProblems?.map(s => s.problem.toString()) || []
 
-            // Filter by status if requested
             if (status === 'solved') {
                 query._id = { $in: user?.solvedDSAProblems?.map(s => s.problem) || [] }
             }
@@ -103,15 +95,14 @@ export const getAllDSAProblems = async (req, res) => {
         const skip = (page - 1) * limit
 
         const problems = await DSAProblem.find(query)
-            .select('-solution -testCases') // Don't send solution and hidden test cases
-            .populate('companies', 'name slug')
+            .select('-testCases.input -testCases.output -solution -starterCode -metadata') // Don't send solution and hidden test cases
+            .populate('companies', 'name logo slug')
             .sort(sort)
             .skip(skip)
             .limit(parseInt(limit))
 
         const total = await DSAProblem.countDocuments(query)
 
-        // Attach user progress to each problem
         const problemsWithProgress = problems.map((problem) => {
             const isSolved = solvedProblemIds.includes(problem._id.toString())
             return {
@@ -149,19 +140,16 @@ export const getAllDSAProblems = async (req, res) => {
     }
 }
 
-// Get single DSA problem by ID or slug
 export const getDSAProblem = async (req, res) => {
     try {
         const { id } = req.params
         const userId = req.user?._id
 
-        // Cache key for problem data (shared across all users)
         const problemCacheKey = `dsa:problem:${id}`
 
         let problem
         let query = { isActive: true }
 
-        // Try to get problem from cache
         try {
             const cachedProblem = await redis.get(problemCacheKey)
             if (cachedProblem) {
@@ -175,13 +163,12 @@ export const getDSAProblem = async (req, res) => {
         if (!problem) {
             console.log(`⚠️  [CACHE MISS] DSA Problem Detail - Fetching from database`)
 
-            // Check if id is a valid MongoDB ObjectId (24 hex characters)
             const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
 
             if (isValidObjectId) {
                 query.$or = [{ _id: id }, { slug: id }]
             } else {
-                // If not valid ObjectId, only search by slug
+
                 query.slug = id
             }
 
@@ -204,13 +191,11 @@ export const getDSAProblem = async (req, res) => {
             }
         }
 
-        // Get user-specific data (submissions) - cached separately
         let isSolved = false
         let submissions = []
         if (userId) {
             const submissionCacheKey = `dsa:problem:${id}:submissions:${userId}`
 
-            // Try to get submissions from cache
             try {
                 const cachedSubmissions = await redis.get(submissionCacheKey)
                 if (cachedSubmissions) {
@@ -246,7 +231,7 @@ export const getDSAProblem = async (req, res) => {
                 }
             } catch (cacheError) {
                 console.error('Cache read error:', cacheError)
-                // Fallback to DB query
+
                 const user = await User.findById(userId).select('solvedDSAProblems')
                 isSolved = user?.solvedDSAProblems?.some(s => s.problem.toString() === problem._id.toString()) || false
 
@@ -282,14 +267,12 @@ export const getDSAProblem = async (req, res) => {
     }
 }
 
-// Interview-specific: Search DSA problems for AI (lightweight)
 export const searchDSAProblemsForInterview = async (req, res) => {
     try {
         const { query, tags, difficulty, limit = 10 } = req.query
 
         const searchQuery = { isActive: true }
 
-        // Search by title or problem number
         if (query && query.trim()) {
             const searchRegex = { $regex: query.trim(), $options: 'i' }
             const searchConditions = [
@@ -298,7 +281,6 @@ export const searchDSAProblemsForInterview = async (req, res) => {
                 { patterns: searchRegex },
             ]
 
-            // If query is a number, include problemNumber search
             const searchNum = parseInt(query.trim())
             if (!isNaN(searchNum)) {
                 searchConditions.push({ problemNumber: searchNum })
@@ -307,7 +289,6 @@ export const searchDSAProblemsForInterview = async (req, res) => {
             searchQuery.$or = searchConditions
         }
 
-        // Filter by tags (data structures or patterns)
         if (tags) {
             const tagArray = tags.split(',')
             searchQuery.$or = searchQuery.$or || []
@@ -317,12 +298,10 @@ export const searchDSAProblemsForInterview = async (req, res) => {
             )
         }
 
-        // Filter by difficulty
         if (difficulty) {
             searchQuery.difficulty = difficulty
         }
 
-        // Return minimal data for search results
         const problems = await DSAProblem.find(searchQuery)
             .select('_id title difficulty dataStructures patterns slug problemNumber')
             .limit(parseInt(limit))
@@ -343,12 +322,10 @@ export const searchDSAProblemsForInterview = async (req, res) => {
     }
 }
 
-// Interview-specific: Get problem with test cases for interview
 export const getDSAProblemForInterview = async (req, res) => {
     try {
         const { id } = req.params
 
-        // Check if id is a valid MongoDB ObjectId
         const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
         const query = isValidObjectId ? { _id: id, isActive: true } : { slug: id, isActive: true }
 
@@ -363,7 +340,6 @@ export const getDSAProblemForInterview = async (req, res) => {
             })
         }
 
-        // Get visible test cases for the interview (up to 3)
         const visibleTestCases = problem.testCases
             .filter(tc => !tc.isHidden)
             .slice(0, 3)
@@ -403,13 +379,11 @@ export const getDSAProblemForInterview = async (req, res) => {
     }
 }
 
-// Helper to wrap user code with driver code
 const wrapCode = (code, language, problem) => {
-    // Delegate everything to codeWrapperService
+
     return codeWrapperService.wrapCode(problem, code, language);
 }
 
-// Run code against visible test cases only (for "Run" button)
 export const runDSACode = async (req, res) => {
     try {
         const { id } = req.params
@@ -422,7 +396,6 @@ export const runDSACode = async (req, res) => {
             })
         }
 
-        // Check if id is a valid MongoDB ObjectId
         const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
         const query = isValidObjectId ? { _id: id } : { slug: id }
 
@@ -434,19 +407,12 @@ export const runDSACode = async (req, res) => {
             })
         }
 
-
-        // Helper to format input: split by comma ignoring commas in brackets, join with newline
         const formatInput = (input) => {
             if (!input) return '';
-            // Split by comma, but only if not enclosed in brackets
-            // This regex matches a comma if it's NOT followed by a closing bracket without an opening bracket in between??
-            // Actually, simpler regex: split by comma that is NOT inside brackets.
-            // Using a simple stack-based parser or complex regex.
-            // Regex: /,(?![^\[]*\])/ works for non-nested brackets.
+
             return input.split(/,(?![^\[]*\])/).map(s => s.trim()).join('\n');
         };
 
-        // Get only visible test cases (max 3 for "Run")
         const visibleTestCases = problem.testCases
             .filter((tc) => !tc.isHidden)
             .slice(0, 3)
@@ -462,11 +428,8 @@ export const runDSACode = async (req, res) => {
             })
         }
 
-        // Wrap the user's code
         const wrappedCode = wrapCode(code, language, problem)
 
-
-        // Run code against visible test cases using Judge0
         const result = await judge0Service.runTestCases(
             wrappedCode,
             language,
@@ -490,13 +453,11 @@ export const runDSACode = async (req, res) => {
     }
 }
 
-// Submit solution for DSA problem (runs ALL test cases including hidden)
 export const submitDSASolution = async (req, res) => {
     try {
         const { id } = req.params
         const { code, language } = req.body
 
-        // Check authentication first
         if (!req.user) {
             return res.status(401).json({
                 success: false,
@@ -511,7 +472,6 @@ export const submitDSASolution = async (req, res) => {
             })
         }
 
-        // Check if id is a valid MongoDB ObjectId
         const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
         const query = isValidObjectId ? { _id: id } : { slug: id }
 
@@ -523,11 +483,8 @@ export const submitDSASolution = async (req, res) => {
             })
         }
 
-
-        // Wrap the user's code
         const wrappedCode = wrapCode(code, language, problem)
 
-        // Helper to format input
         const formatInput = (input) => {
             if (!input) return '';
             return input.split(/,(?![^\[]*\])/).map(s => s.trim()).join('\n');
@@ -538,12 +495,10 @@ export const submitDSASolution = async (req, res) => {
             input: formatInput(tc.input)
         }));
 
-        // Get current solved status for attempt tracking
         const user = await User.findById(req.user._id).select('solvedDSAProblems stats')
         const alreadySolved = user.solvedDSAProblems?.some(s => s.problem.toString() === problem._id.toString())
         const attemptNumber = (user.solvedDSAProblems?.find(s => s.problem.toString() === problem._id.toString())?.attempts || 0) + 1
 
-        // Run code against ALL test cases using Judge0
         let executionResult
         try {
             executionResult = await judge0Service.runTestCases(
@@ -556,7 +511,6 @@ export const submitDSASolution = async (req, res) => {
         } catch (execError) {
             console.error('Judge0 execution error:', execError)
 
-            // Update submission with runtime error (overwrite existing if any)
             await Submission.findOneAndUpdate(
                 {
                     user: req.user._id,
@@ -569,7 +523,7 @@ export const submitDSASolution = async (req, res) => {
                     status: 'runtime-error',
                     compilationError: execError.message,
                     attemptNumber,
-                    // Clear previous results
+
                     testResults: [],
                     isAccepted: false,
                 },
@@ -583,7 +537,6 @@ export const submitDSASolution = async (req, res) => {
             })
         }
 
-        // Determine submission status based on execution result
         let submissionStatus = 'wrong-answer'
         if (executionResult.accepted) {
             submissionStatus = 'accepted'
@@ -595,14 +548,12 @@ export const submitDSASolution = async (req, res) => {
             submissionStatus = 'runtime-error'
         }
 
-        // Calculate XP earned for accepted solutions
         let xpEarned = 0
         if (executionResult.accepted) {
-            // Award XP based on difficulty
+
             const xpMap = { Easy: 10, Medium: 20, Hard: 30 }
             xpEarned = xpMap[problem.difficulty] || 10
 
-            // Update User's solvedDSAProblems if not already solved
             if (!alreadySolved) {
                 await User.findByIdAndUpdate(req.user._id, {
                     $push: {
@@ -619,24 +570,21 @@ export const submitDSASolution = async (req, res) => {
                     },
                 })
             } else {
-                // Update attempts if already solved
+
                 await User.updateOne(
                     { _id: req.user._id, 'solvedDSAProblems.problem': problem._id },
                     { $inc: { 'solvedDSAProblems.$.attempts': 1 } }
                 )
             }
 
-            // Update problem stats
             if (!alreadySolved) {
                 problem.totalAccepted += 1
             }
         }
 
-        // Update problem stats regardless
         problem.totalSubmissions += 1
         problem.acceptance = (problem.totalAccepted / problem.totalSubmissions) * 100
 
-        // Use updateOne to avoid validation errors on imported problems
         await DSAProblem.updateOne(
             { _id: problem._id },
             {
@@ -646,7 +594,6 @@ export const submitDSASolution = async (req, res) => {
             }
         )
 
-        // Create or Update submission record (Single submission per problem per user)
         const submission = await Submission.findOneAndUpdate(
             {
                 user: req.user._id,
@@ -684,7 +631,7 @@ export const submitDSASolution = async (req, res) => {
                 passedTestCases: executionResult.passedTestCases,
                 testResults: executionResult.testResults.map((r) => ({
                     ...r,
-                    // Hide input/output for hidden test cases in response
+
                     input: problem.testCases.find((tc) => tc._id?.toString() === r.testCaseId?.toString())?.isHidden
                         ? '[Hidden]'
                         : r.input,
@@ -712,7 +659,6 @@ export const submitDSASolution = async (req, res) => {
     }
 }
 
-// Get submission result
 export const getSubmissionResult = async (req, res) => {
     try {
         const { submissionId } = req.params
@@ -743,13 +689,11 @@ export const getSubmissionResult = async (req, res) => {
     }
 }
 
-// Get user's DSA statistics
 export const getDSAStats = async (req, res) => {
     try {
         const userId = req.user._id
         const cacheKey = `dsa:stats:${userId}`
 
-        // Try to get from cache
         try {
             const cachedData = await redis.get(cacheKey)
             if (cachedData) {
@@ -825,7 +769,6 @@ export const getDSAStats = async (req, res) => {
     }
 }
 
-// Admin: Create DSA problem
 export const createDSAProblem = async (req, res) => {
     try {
         const problem = new DSAProblem(req.body)
@@ -849,7 +792,6 @@ export const createDSAProblem = async (req, res) => {
     }
 }
 
-// Admin: Update DSA problem
 export const updateDSAProblem = async (req, res) => {
     try {
         const { id } = req.params
@@ -884,12 +826,10 @@ export const updateDSAProblem = async (req, res) => {
     }
 }
 
-// Admin: Delete DSA problem (HARD DELETE)
 export const deleteDSAProblem = async (req, res) => {
     try {
         const { id } = req.params
 
-        // Hard delete - permanently remove from database
         const problem = await DSAProblem.findByIdAndDelete(id)
 
         if (!problem) {

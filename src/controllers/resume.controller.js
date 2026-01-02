@@ -4,7 +4,6 @@ import cloudinary from '../config/cloudinary.js'
 import { Resume, User } from '../models/index.js'
 import { extractTextFromPDF, structureResumeWithAI } from '../services/resume.service.js'
 
-// Configure multer for temporary file storage
 const upload = multer({
     dest: 'uploads/temp/',
     limits: {
@@ -19,13 +18,8 @@ const upload = multer({
     },
 })
 
-// Export multer middleware
 export const uploadMiddleware = upload.single('resume')
 
-/**
- * Upload and parse resume
- * POST /api/resume/upload
- */
 export const uploadResume = async (req, res) => {
     try {
         if (!req.file) {
@@ -38,21 +32,17 @@ export const uploadResume = async (req, res) => {
         const userId = req.user._id
         const filePath = req.file.path
 
-        // Step 1: Extract text from PDF
         const fileBuffer = fs.readFileSync(filePath)
         const { rawText, cleanedText } = await extractTextFromPDF(fileBuffer)
 
-        // Step 2: Upload PDF to Cloudinary
         const cloudinaryResult = await cloudinary.uploader.upload(filePath, {
             resource_type: 'raw',
             folder: 'resumes',
             public_id: `resume_${userId}_${Date.now()}`,
         })
 
-        // Step 3: Structure resume with AI
         const parsedData = await structureResumeWithAI(cleanedText)
 
-        // Step 4: Save resume to database
         const resume = await Resume.create({
             userId,
             resumeUrl: cloudinaryResult.secure_url,
@@ -62,12 +52,10 @@ export const uploadResume = async (req, res) => {
             parsedData,
         })
 
-        // Step 5: Update user's resume reference
         await User.findByIdAndUpdate(userId, {
             resume: resume._id,
         })
 
-        // Step 6: Clean up temporary file
         fs.unlinkSync(filePath)
 
         res.json({
@@ -76,7 +64,7 @@ export const uploadResume = async (req, res) => {
             data: resume,
         })
     } catch (error) {
-        // Clean up temp file on error
+
         if (req.file?.path) {
             try {
                 fs.unlinkSync(req.file.path)
@@ -93,10 +81,6 @@ export const uploadResume = async (req, res) => {
     }
 }
 
-/**
- * Get user's resume
- * GET /api/resume
- */
 export const getUserResume = async (req, res) => {
     try {
         const userId = req.user._id
@@ -123,10 +107,6 @@ export const getUserResume = async (req, res) => {
     }
 }
 
-/**
- * Update resume parsed data
- * PUT /api/resume/:id
- */
 export const updateResume = async (req, res) => {
     try {
         const { id } = req.params
@@ -159,10 +139,6 @@ export const updateResume = async (req, res) => {
     }
 }
 
-/**
- * Delete resume
- * DELETE /api/resume/:id
- */
 export const deleteResume = async (req, res) => {
     try {
         const { id } = req.params
@@ -177,17 +153,14 @@ export const deleteResume = async (req, res) => {
             })
         }
 
-        // Delete from Cloudinary
         try {
             await cloudinary.uploader.destroy(resume.publicId, { resource_type: 'raw' })
         } catch (cloudinaryError) {
             console.error('Cloudinary deletion error:', cloudinaryError)
         }
 
-        // Delete from database
         await Resume.findByIdAndDelete(id)
 
-        // Remove reference from user
         await User.findByIdAndUpdate(userId, { resume: null })
 
         res.json({

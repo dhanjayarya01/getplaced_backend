@@ -3,23 +3,17 @@ import UserProgress from '../models/UserProgress.js'
 import Resume from '../models/Resume.js'
 import User from '../models/User.js'
 
-/**
- * Start a company-specific interview
- * POST /api/companies/:companyId/interview/start
- */
 export const startCompanyInterview = async (req, res) => {
     try {
         const { companyId } = req.params // This is actually a slug
         const { roleIndex } = req.body
         const userId = req.user._id
 
-        // Fetch company by slug (companyId param is actually slug like "google")
         const company = await Company.findOne({ slug: companyId })
         if (!company) {
             return res.status(404).json({ success: false, message: 'Company not found' })
         }
 
-        // Validate role
         if (!company.rolesData || roleIndex >= company.rolesData.length) {
             return res.status(400).json({ success: false, message: 'Invalid role index' })
         }
@@ -27,19 +21,17 @@ export const startCompanyInterview = async (req, res) => {
         const role = company.rolesData[roleIndex]
         const totalRounds = role.hiringPipeline?.length || 0
 
-        // Find or create user progress
         let userProgress = await UserProgress.findOne({ user: userId })
         if (!userProgress) {
             userProgress = new UserProgress({ user: userId, companyInterviewProgress: [] })
         }
 
-        // Find existing progress for this company/role
         let companyProgress = userProgress.companyInterviewProgress.find(
             cp => cp.company.toString() === company._id.toString() && cp.roleIndex === roleIndex
         )
 
         if (!companyProgress) {
-            // Create new progress entry
+
             companyProgress = {
                 company: company._id, // Use ObjectId, not slug
                 roleIndex,
@@ -70,17 +62,12 @@ export const startCompanyInterview = async (req, res) => {
     }
 }
 
-/**
- * Submit interview round result
- * POST /api/companies/:companyId/interview/submit
- */
 export const submitInterviewRound = async (req, res) => {
     try {
         const { companyId } = req.params // This is actually a slug
         const { roleIndex, roundNumber, score, feedback, areasGoodIn, areasToWorkOn, problemsAsked } = req.body
         const userId = req.user._id
 
-        // Fetch company by slug
         const company = await Company.findOne({ slug: companyId })
         if (!company) {
             return res.status(404).json({ success: false, message: 'Company not found' })
@@ -93,7 +80,6 @@ export const submitInterviewRound = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid round number' })
         }
 
-        // Update user progress
         const userProgress = await UserProgress.findOne({ user: userId })
         if (!userProgress) {
             return res.status(404).json({ success: false, message: 'Progress not found' })
@@ -107,7 +93,6 @@ export const submitInterviewRound = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Company progress not found' })
         }
 
-        // Update or create round progress
         let roundProgress = companyProgress.roundProgress.find(rp => rp.roundNumber === roundNumber)
 
         if (!roundProgress) {
@@ -121,7 +106,6 @@ export const submitInterviewRound = async (req, res) => {
             companyProgress.roundProgress.push(roundProgress)
         }
 
-        // Update round data
         roundProgress.score = score
         roundProgress.feedback = feedback
         roundProgress.areasGoodIn = areasGoodIn || []
@@ -132,20 +116,16 @@ export const submitInterviewRound = async (req, res) => {
             roundProgress.problemsAsked = problemsAsked
         }
 
-        // Update overall progress
         const completedRounds = companyProgress.roundProgress.filter(rp => rp.completed).length
         companyProgress.completedRounds = completedRounds
 
-        // Calculate overall score
         const totalScore = companyProgress.roundProgress
             .filter(rp => rp.completed && rp.score)
             .reduce((sum, rp) => sum + rp.score, 0)
         companyProgress.overallScore = completedRounds > 0 ? totalScore / completedRounds : 0
 
-        // Check if passed (score >= passingCriteria)
         const passed = score >= (round.passingCriteria?.minimumScore || 70)
 
-        // Unlock next round if passed
         if (passed && roundNumber < role.hiringPipeline.length) {
             companyProgress.currentRound = roundNumber + 1
         }
@@ -171,10 +151,6 @@ export const submitInterviewRound = async (req, res) => {
     }
 }
 
-/**
- * Get user's progress for a company
- * GET /api/companies/:companyId/interview/progress
- */
 export const getCompanyInterviewProgress = async (req, res) => {
     try {
         const { companyId } = req.params
@@ -193,7 +169,6 @@ export const getCompanyInterviewProgress = async (req, res) => {
             })
         }
 
-        // Find progress for this company/role
         const companyProgress = userProgress.companyInterviewProgress.find(
             cp => cp.company._id.toString() === companyId && cp.roleIndex === parseInt(roleIndex)
         )
@@ -208,17 +183,12 @@ export const getCompanyInterviewProgress = async (req, res) => {
     }
 }
 
-/**
- * Get user's resume for interview context
- * GET /api/companies/interview/resume
- */
 export const getUserResumeForInterview = async (req, res) => {
     try {
         const userId = req.user._id
 
         console.log('🔍 Looking for resume with userId:', userId)
 
-        // Fetch user with populated resume (same as behavioral interview)
         const user = await User.findById(userId).populate('resume')
 
         console.log('👤 User found:', user ? 'YES' : 'NO')
