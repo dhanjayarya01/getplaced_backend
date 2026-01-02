@@ -1,3 +1,4 @@
+import '../utils/canvas-polyfill.js'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 

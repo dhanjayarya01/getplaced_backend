@@ -27,10 +27,38 @@ app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
 
 // CORS configuration
+const allowedOrigins = [
+    'http://localhost:3000',
+    'https://www.getplaced.tech',
+    'https://getplaced.tech',
+    process.env.FRONTEND_URL
+].filter(Boolean)
+
 app.use(
     cors({
-        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-        credentials: true, // Allow cookies to be sent
+        origin: (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin)) {
+                callback(null, true)
+            } else {
+                console.warn(`🚫 CORS blocked origin: ${origin}`)
+                callback(new Error('Not allowed by CORS'))
+            }
+        },
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+        allowedHeaders: [
+            'Content-Type',
+            'Authorization',
+            'Cookie',
+            'Cache-Control',
+            'Pragma',
+            'Expires',
+            'If-None-Match',
+            'If-Modified-Since',
+            'X-Requested-With'
+        ],
+        exposedHeaders: ['Set-Cookie'],
+        maxAge: 86400
     })
 )
 

@@ -1,0 +1,20 @@
+scripts
+
+coverage
+build/
+Dockerfile
+.dockerignore
+
+
+# Git
+.git
+.gitignore
+
+# Node modules
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Environment files
+.env
+.env.*
