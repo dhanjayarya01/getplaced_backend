@@ -53,8 +53,11 @@ export const getAllDSAProblems = async (req, res) => {
 
         if (search && search.trim()) {
             const searchRegex = { $regex: search.trim(), $options: 'i' }
+            // For slug search: remove spaces and hyphens, convert to lowercase
+            const searchSlug = search.trim().toLowerCase().replace(/[-\s]/g, '')
+
             const searchConditions = [
-                { title: searchRegex },
+                { slug: { $regex: searchSlug, $options: 'i' } }, // Search by slug (no hyphens)
                 { dataStructures: searchRegex },
                 { patterns: searchRegex },
             ]
@@ -129,6 +132,8 @@ export const getAllDSAProblems = async (req, res) => {
             console.error('❌ [CACHE ERROR] DSA problems write:', cacheError.message)
         }
 
+        // Add Cache-Control header for HTTP caching
+        res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600')
         res.json(response)
     } catch (error) {
         console.error('Error fetching DSA problems:', error)
@@ -246,6 +251,9 @@ export const getDSAProblem = async (req, res) => {
             }
         }
 
+        // Add Cache-Control header for HTTP caching
+        res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600')
+
         res.json({
             success: true,
             data: {
@@ -275,8 +283,11 @@ export const searchDSAProblemsForInterview = async (req, res) => {
 
         if (query && query.trim()) {
             const searchRegex = { $regex: query.trim(), $options: 'i' }
+            // For slug search: remove spaces and hyphens, convert to lowercase
+            const searchSlug = query.trim().toLowerCase().replace(/[-\s]/g, '')
+
             const searchConditions = [
-                { title: searchRegex },
+                { slug: { $regex: searchSlug, $options: 'i' } }, // Search by slug (no hyphens)
                 { dataStructures: searchRegex },
                 { patterns: searchRegex },
             ]

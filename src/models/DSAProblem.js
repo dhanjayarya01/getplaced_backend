@@ -5,9 +5,7 @@ const dsaProblemSchema = new mongoose.Schema(
         title: {
             type: String,
             required: true,
-            trim: true,
             unique: true,
-            lowercase: true,
         },
         problemNumber: {
             type: Number,
@@ -260,6 +258,24 @@ const dsaProblemSchema = new mongoose.Schema(
         timestamps: true,
     }
 )
+
+// Pre-save hook to ensure slug is properly formatted (lowercase, trimmed, no hyphens)
+// Title keeps its original casing, only trimmed by schema
+dsaProblemSchema.pre('save', function (next) {
+    if (this.isModified('slug') && this.slug) {
+        this.slug = this.slug.replace(/-/g, '').trim().toLowerCase()
+    }
+    next()
+})
+
+// Pre-update hook to ensure slug is properly formatted on updates
+dsaProblemSchema.pre('findOneAndUpdate', function (next) {
+    const update = this.getUpdate()
+    if (update.slug) {
+        update.slug = update.slug.replace(/-/g, '').trim().toLowerCase()
+    }
+    next()
+})
 
 // Indexes
 dsaProblemSchema.index({ slug: 1 })
