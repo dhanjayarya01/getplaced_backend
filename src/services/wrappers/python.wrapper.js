@@ -7,6 +7,8 @@ export const generatePythonWrapper = (problem, userCode) => {
     // ============================================================================
     // EXTRACT METADATA
     // ============================================================================
+    console.log('🔍 Python wrapper received problem:', { title: problem.title, slug: problem.slug, params: problem.parameters });
+
     const metadata = problem.pythonMetadata || {};
     const fn = metadata.functionName || problem.functionName || problem.slug.replace(/-/g, '_');
 
@@ -82,11 +84,51 @@ export const generatePythonWrapper = (problem, userCode) => {
         return 'int';
     };
 
-    // Normalize parameters
+    // Sanitize parameter name helper
+    const sanitizeName = (name) => {
+        if (!name) return 'param';
+        // Remove invalid Python identifier characters (keep only letters, numbers, underscores)
+        let clean = String(name).replace(/[^a-zA-Z0-9_]/g, '_');
+        // Ensure doesn't start with number
+        if (/^\d/.test(clean)) clean = 'param_' + clean;
+        // Ensure not empty or just underscores
+        if (!clean || clean === '_') clean = 'param';
+        return clean;
+    };
+
+    // Smart type inference helper for when database metadata is incomplete
+    const inferType = (param, problemTitle, problemSlug) => {
+        const name = (param.name || '').toLowerCase();
+        const title = (problemTitle || '').toLowerCase();
+        const slug = (problemSlug || '').toLowerCase();
+
+        // Detect LinkedList problems - check original name for val/next patterns
+        const origName = (param.name || '').toLowerCase();
+        if (title.includes('linked list') || title.includes('list node') || slug.includes('linked') || slug.includes('addtwonumbers') || title.includes('add two')) {
+            if (name.includes('l1') || name.includes('l2') || name.includes('head') || name.includes('list') || origName.startsWith('val') || origName.startsWith('next')) {
+                console.log(`✅ OVERRIDE ListNode: ${param.name} (was ${param.type})`);
+                return 'Optional[ListNode]';
+            }
+        }
+
+        // Detect Tree problems
+        if (title.includes('tree') || title.includes('binary') || slug.includes('tree')) {
+            if (name.includes('root') || name.includes('node') || name.includes('tree')) {
+                return 'Optional[TreeNode]';
+            }
+        }
+
+        // Use existing type if available
+        return param.type || mapType(param.cType, param.name);
+    };
+
+    // Normalize and sanitize parameters with smart type inference
     params = params.map(p => ({
-        name: p.name,
-        type: p.type || mapType(p.cType, p.name)
+        name: sanitizeName(p.name),
+        type: inferType(p, problem.title, problem.slug)
     }));
+
+    console.log('🔍 Inferred parameter types:', params);
 
     // Normalize return type
     const normalizedReturnType = returnType.type || mapType(returnType.cType, 'return');

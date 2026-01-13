@@ -1,6 +1,7 @@
 import { DSAProblem, User, Submission } from '../models/index.js'
 import judge0Service from '../services/judge0.service.js'
 import codeWrapperService from '../services/codeWrapper.service.js'
+import { queueCodeExecution, getJobStatus } from '../queues/codeExecution.queue.js'
 import redis from '../config/redis.js'
 import { generateCacheKey, invalidateDSACache, invalidateUserCache } from '../utils/cache.utils.js'
 
@@ -483,6 +484,7 @@ export const submitDSASolution = async (req, res) => {
             })
         }
 
+        // Fetch problem
         const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id)
         const query = isValidObjectId ? { _id: id } : { slug: id }
 
@@ -494,177 +496,39 @@ export const submitDSASolution = async (req, res) => {
             })
         }
 
-        const wrappedCode = wrapCode(code, language, problem)
-
+        // Format input for test cases
         const formatInput = (input) => {
-            if (!input) return '';
-            return input.split(/,(?![^\[]*\])/).map(s => s.trim()).join('\n');
-        };
+            if (!input) return ''
+            return input.split(/,(?![^\[]*\])/).map(s => s.trim()).join('\n')
+        }
 
         const formattedTestCases = problem.testCases.map(tc => ({
             ...tc.toObject(),
             input: formatInput(tc.input)
-        }));
+        }))
 
-        const user = await User.findById(req.user._id).select('solvedDSAProblems stats')
-        const alreadySolved = user.solvedDSAProblems?.some(s => s.problem.toString() === problem._id.toString())
-        const attemptNumber = (user.solvedDSAProblems?.find(s => s.problem.toString() === problem._id.toString())?.attempts || 0) + 1
-
-        let executionResult
-        try {
-            executionResult = await judge0Service.runTestCases(
-                wrappedCode,
-                language,
-                formattedTestCases, // All test cases including hidden, formatted
-                problem.timeLimit,
-                problem.memoryLimit
-            )
-        } catch (execError) {
-            console.error('Judge0 execution error:', execError)
-
-            await Submission.findOneAndUpdate(
-                {
-                    user: req.user._id,
-                    problemId: problem._id,
-                    problemType: 'dsa',
-                },
-                {
-                    code,
-                    language,
-                    status: 'runtime-error',
-                    compilationError: execError.message,
-                    attemptNumber,
-
-                    testResults: [],
-                    isAccepted: false,
-                },
-                { upsert: true, new: true }
-            )
-
-            return res.status(500).json({
-                success: false,
-                message: 'Code execution failed',
-                error: execError.message,
-            })
-        }
-
-        let submissionStatus = 'wrong-answer'
-        if (executionResult.accepted) {
-            submissionStatus = 'accepted'
-        } else if (executionResult.testResults.some((r) => r.status === 'Time Limit Exceeded')) {
-            submissionStatus = 'time-limit-exceeded'
-        } else if (executionResult.testResults.some((r) => r.status === 'Compilation Error')) {
-            submissionStatus = 'compilation-error'
-        } else if (executionResult.testResults.some((r) => r.status?.includes('Runtime Error'))) {
-            submissionStatus = 'runtime-error'
-        }
-
-        let xpEarned = 0
-        if (executionResult.accepted) {
-
-            const xpMap = { Easy: 10, Medium: 20, Hard: 30 }
-            xpEarned = xpMap[problem.difficulty] || 10
-
-            if (!alreadySolved) {
-                await User.findByIdAndUpdate(req.user._id, {
-                    $push: {
-                        solvedDSAProblems: {
-                            problem: problem._id,
-                            solvedAt: new Date(),
-                            language,
-                            attempts: 1,
-                        },
-                    },
-                    $inc: {
-                        'stats.dsaSolved': 1,
-                        'stats.totalXP': xpEarned,
-                    },
-                })
-            } else {
-
-                await User.updateOne(
-                    { _id: req.user._id, 'solvedDSAProblems.problem': problem._id },
-                    { $inc: { 'solvedDSAProblems.$.attempts': 1 } }
-                )
-            }
-
-            if (!alreadySolved) {
-                problem.totalAccepted += 1
-            }
-        }
-
-        problem.totalSubmissions += 1
-        problem.acceptance = (problem.totalAccepted / problem.totalSubmissions) * 100
-
-        await DSAProblem.updateOne(
-            { _id: problem._id },
-            {
-                totalSubmissions: problem.totalSubmissions,
-                totalAccepted: problem.totalAccepted,
-                acceptance: problem.acceptance
-            }
+        // Queue the job using BullMQ
+        const result = await queueCodeExecution(
+            id,
+            code,
+            language,
+            formattedTestCases,
+            req.user._id.toString(),
+            problem
         )
 
-        const submission = await Submission.findOneAndUpdate(
-            {
-                user: req.user._id,
-                problemId: problem._id,
-                problemType: 'dsa',
-            },
-            {
-                code,
-                language,
-                attemptNumber,
-                status: submissionStatus,
-                testResults: executionResult.testResults,
-                totalTestCases: executionResult.totalTestCases,
-                passedTestCases: executionResult.passedTestCases,
-                executionTime: executionResult.executionTime,
-                memoryUsed: executionResult.memoryUsed,
-                isAccepted: executionResult.accepted,
-                xpEarned,
-            },
-            { upsert: true, new: true }
-        )
-
-        await invalidateUserCache(req.user._id)
-        await redis.del(`dsa:problem:${id}:submissions:${req.user._id}`)
-        console.log(`🔄 [CACHE INVALIDATED] User stats and submissions cleared`)
-
+        // Return job ID immediately (async response)
         res.json({
             success: true,
-            message: executionResult.accepted ? 'All test cases passed!' : 'Some test cases failed',
-            data: {
-                submissionId: submission._id,
-                status: submissionStatus,
-                accepted: executionResult.accepted,
-                totalTestCases: executionResult.totalTestCases,
-                passedTestCases: executionResult.passedTestCases,
-                testResults: executionResult.testResults.map((r) => ({
-                    ...r,
-
-                    input: problem.testCases.find((tc) => tc._id?.toString() === r.testCaseId?.toString())?.isHidden
-                        ? '[Hidden]'
-                        : r.input,
-                    expectedOutput: problem.testCases.find((tc) => tc._id?.toString() === r.testCaseId?.toString())
-                        ?.isHidden
-                        ? '[Hidden]'
-                        : r.expectedOutput,
-                    actualOutput: problem.testCases.find((tc) => tc._id?.toString() === r.testCaseId?.toString())
-                        ?.isHidden
-                        ? '[Hidden]'
-                        : r.actualOutput,
-                })),
-                executionTime: executionResult.executionTime,
-                memoryUsed: executionResult.memoryUsed,
-                xpEarned,
-            },
+            message: 'Code submission queued for execution',
+            jobId: result.jobId,
+            status: result.status,
         })
     } catch (error) {
-        console.error('Error submitting solution:', error)
+        console.error('Error queueing code execution:', error)
         res.status(500).json({
             success: false,
-            message: 'Error submitting solution',
+            message: 'Error submitting code',
             error: error.message,
         })
     }
@@ -862,6 +726,54 @@ export const deleteDSAProblem = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error deleting problem',
+            error: error.message,
+        })
+    }
+}
+
+// ==========================================
+// NEW: Async Code Execution with BullMQ
+// ==========================================
+
+// ==========================================
+// Job Status Endpoint
+// ==========================================
+
+/**
+ * Get code execution job status by job ID
+ * Used for polling by frontend
+ */
+export const getCodeExecutionStatus = async (req, res) => {
+    const { jobId } = req.params
+    console.log(`🎯 [${new Date().toISOString()}] Status request received for: ${jobId}`)
+
+    try {
+        const status = await getJobStatus(jobId)
+
+        console.log(`📊 Job status request for: ${jobId}`)
+        console.log(`   Status: ${status.status}`)
+        console.log(`   Progress: ${status.progress}`)
+
+        if (!status.found) {
+            return res.status(404).json({
+                success: false,
+                message: 'Job not found',
+            })
+        }
+
+        res.json({
+            success: true,
+            jobId: status.jobId,
+            status: status.status,
+            progress: status.progress,
+            result: status.result || null,
+            error: status.error || null,
+        })
+    } catch (error) {
+        console.error('Error fetching job status:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching job status',
             error: error.message,
         })
     }

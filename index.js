@@ -1,14 +1,15 @@
+import dotenv from 'dotenv'
 import express from 'express'
 import session from 'express-session'
 import passport from 'passport'
 import cors from 'cors'
-import dotenv from 'dotenv'
 import cookieParser from 'cookie-parser'
 import connectDB from './src/config/database.js'
 import configurePassport from './src/config/passport.js'
 import setupRoutes from './src/routes/index.js'
+import queueDashboard from './src/queues/dashboard.js'
 
-// Load environment variables
+
 dotenv.config()
 
 const app = express()
@@ -102,6 +103,9 @@ app.get('/', (req, res) => {
 
 // Setup all API routes
 setupRoutes(app)
+
+// Mount BullBoard dashboard for queue monitoring (admin only)
+app.use('/admin/queues', queueDashboard.getRouter())
 
 // Error handling middleware
 app.use((err, req, res, next) => {

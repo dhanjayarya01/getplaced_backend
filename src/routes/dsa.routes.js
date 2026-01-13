@@ -11,6 +11,7 @@ import {
     deleteDSAProblem,
     searchDSAProblemsForInterview,
     getDSAProblemForInterview,
+    getCodeExecutionStatus,
 } from '../controllers/dsa.controller.js'
 import { getDSAFilters } from '../controllers/admin.controller.js'
 import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
@@ -26,11 +27,12 @@ router.get('/stats', authenticateUser, getDSAStats)
 router.get('/:id', getDSAProblem)
 
 // Protected routes
-router.post('/:id/run', authenticateUser, runDSACode) // Run visible test cases only
-router.post('/:id/submit', authenticateUser, submitDSASolution) // Submit all test cases
+router.post('/:id/run', authenticateUser, runDSACode) // Run visible test cases only (synchronous)
+router.post('/:id/submit', authenticateUser, submitDSASolution) // Submit all test cases (async with BullMQ)
 router.get('/submission/:submissionId', authenticateUser, getSubmissionResult)
+router.get('/submission-status/:jobId', authenticateUser, getCodeExecutionStatus) // Poll job status
 
-// Admin routes
+//Admin routes
 router.post('/', authenticateUser, isAdmin, createDSAProblem)
 router.put('/:id', authenticateUser, isAdmin, updateDSAProblem)
 router.delete('/:id', authenticateUser, isAdmin, deleteDSAProblem)
