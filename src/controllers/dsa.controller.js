@@ -401,6 +401,13 @@ export const runDSACode = async (req, res) => {
         const { id } = req.params
         const { code, language } = req.body
 
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Authentication required to run code',
+            })
+        }
+
         if (!code || !language) {
             return res.status(400).json({
                 success: false,
@@ -425,12 +432,13 @@ export const runDSACode = async (req, res) => {
             return input.split(/,(?![^\[]*\])/).map(s => s.trim()).join('\n');
         };
 
+        // Get only VISIBLE test cases (first 3, non-hidden) for Run
         const visibleTestCases = problem.testCases
             .filter((tc) => !tc.isHidden)
             .slice(0, 3)
             .map(tc => ({
                 ...tc.toObject(),
-                input: formatInput(tc.input) // Format input for Judge0
+                input: formatInput(tc.input)
             }))
 
         if (visibleTestCases.length === 0) {
@@ -440,23 +448,25 @@ export const runDSACode = async (req, res) => {
             })
         }
 
-        const wrappedCode = wrapCode(code, language, problem)
-
-        const result = await judge0Service.runTestCases(
-            wrappedCode,
+        // Queue the job using BullMQ (same as submit, but with visible tests only)
+        const result = await queueCodeExecution(
+            id,
+            code,
             language,
-            visibleTestCases,
-            problem.timeLimit,
-            problem.memoryLimit
+            visibleTestCases,  // Only visible tests!
+            req.user._id.toString(),
+            problem
         )
 
+        // Return job ID immediately (async response)
         res.json({
             success: true,
-            message: 'Code executed successfully',
-            data: result,
+            message: 'Code execution queued',
+            jobId: result.jobId,
+            status: result.status,
         })
     } catch (error) {
-        console.error('Error running code:', error)
+        console.error('Error queueing code execution:', error)
         res.status(500).json({
             success: false,
             message: 'Error running code',
