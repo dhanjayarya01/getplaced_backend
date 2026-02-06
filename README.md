@@ -210,10 +210,9 @@ Multi-layer caching with Redis:
 ### Cache Layers
 
 1. **TanStack Query** (Frontend) - Client-side cache
-2. **Axios Cache** (Frontend) - HTTP response cache
-3. **Browser Cache** (Frontend) - Standard HTTP cache
-4. **Redis** (Backend) - Server-side cache
-5. **MongoDB** (Backend) - Database
+2. **Browser Cache** (Frontend) - Standard HTTP cache
+3. **Redis** (Backend) - Server-side cache
+4. **MongoDB** (Backend) - Database
 
 ### Cache Keys Pattern
 
