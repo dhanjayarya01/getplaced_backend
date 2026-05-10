@@ -24,58 +24,34 @@ const developmentProblemSchema = new mongoose.Schema(
         },
 
         // Technology Classification
-        primaryTechnology: {
-            type: String,
-            required: true,
-            enum: [
-                'React',
-                'Node.js',
-                'Next.js',
-                'Express',
-                'JavaScript',
-                'TypeScript',
-                'Java',
-                'Python',
-                'Spring Boot',
-                'Django',
-                'Flask',
-                'MongoDB',
-                'PostgreSQL',
-                'MySQL',
-                'Redis',
-                'Docker',
-                'Kubernetes',
-                'AWS',
-                'Azure',
-                'GCP',
-            ],
-        },
-
-        // Additional technologies used
-        technologies: [String],
-
-        // Topic/Concept
-        topics: [
+        technologies: [
             {
                 type: String,
                 enum: [
-                    'Hooks',
+                    'React',
+                    'Next.js',
+                    'Node.js',
+                    'TypeScript',
+                    'Python',
+                    'Spring Boot',
+                    'MongoDB',
+                    'PostgreSQL',
+                ],
+            },
+        ],
+
+        // Categories
+        categories: [
+            {
+                type: String,
+                enum: [
                     'State Management',
-                    'Routing',
+                    'API Integration',
                     'Authentication',
-                    'API Design',
                     'Database Design',
-                    'Caching',
-                    'Security',
-                    'Testing',
                     'Performance',
-                    'Deployment',
-                    'Microservices',
-                    'WebSockets',
-                    'GraphQL',
-                    'REST API',
-                    'Server-Side Rendering',
-                    'Client-Side Rendering',
+                    'Testing',
+                    'DevOps',
                 ],
             },
         ],
@@ -87,18 +63,6 @@ const developmentProblemSchema = new mongoose.Schema(
             required: true,
         },
 
-        // For coding problems
-        codingProblem: {
-            starterCode: String,
-            solution: String,
-            testCases: [
-                {
-                    input: String,
-                    expectedOutput: String,
-                    isHidden: { type: Boolean, default: false },
-                },
-            ],
-        },
 
         // For project-based problems
         projectProblem: {
@@ -136,13 +100,30 @@ const developmentProblemSchema = new mongoose.Schema(
                 },
             ],
 
-            // Docker/K8s configuration for running the project
-            dockerConfig: {
-                dockerfile: String,
-                dockerCompose: String,
-                buildCommand: String,
-                runCommand: String,
-                port: Number,
+            // Docker/Runtime configuration for the project
+            runtimeEnvironment: {
+                baseImage: {
+                    type: String,
+                    required: true,
+                    default: 'node:18'
+                },
+                entrypoint: {
+                    type: String,
+                    required: true,
+                    default: 'npm'
+                },
+                args: {
+                    type: [String],
+                    default: ['run', 'dev']
+                },
+                installCommand: {
+                    type: String,
+                    default: 'npm install'
+                },
+                port: {
+                    type: Number,
+                    default: 3000
+                }
             },
         },
 
@@ -203,10 +184,10 @@ const developmentProblemSchema = new mongoose.Schema(
 
 // Indexes
 developmentProblemSchema.index({ slug: 1 })
-developmentProblemSchema.index({ primaryTechnology: 1 })
+developmentProblemSchema.index({ technologies: 1 })
 developmentProblemSchema.index({ difficulty: 1 })
 developmentProblemSchema.index({ type: 1 })
-developmentProblemSchema.index({ topics: 1 })
+developmentProblemSchema.index({ categories: 1 })
 
 const DevelopmentProblem = mongoose.model('DevelopmentProblem', developmentProblemSchema)
 

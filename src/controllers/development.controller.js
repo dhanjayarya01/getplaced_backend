@@ -7,7 +7,7 @@ export const getAllDevelopmentProblems = async (req, res) => {
         const {
             difficulty,
             technology,
-            topic,
+            category,
             type,
             company,
             status,
@@ -18,7 +18,7 @@ export const getAllDevelopmentProblems = async (req, res) => {
 
         const userId = req.user?._id
         const cacheKey = generateCacheKey('dev:all', {
-            difficulty, technology, topic, type, company, status, page, limit, sort
+            difficulty, technology, category, type, company, status, page, limit, sort
         })
 
         try {
@@ -41,13 +41,13 @@ export const getAllDevelopmentProblems = async (req, res) => {
         }
 
         if (technology) {
-            const technologies = technology.split(',')
-            query.primaryTechnology = technologies.length > 1 ? { $in: technologies } : technology
+            const techArray = technology.split(',')
+            query.technologies = { $in: techArray }
         }
 
-        if (topic) {
-            const topics = topic.split(',')
-            query.topics = topics.length > 1 ? { $in: topics } : topic
+        if (category) {
+            const catArray = category.split(',')
+            query.categories = { $in: catArray }
         }
 
         if (type) {
@@ -75,7 +75,7 @@ export const getAllDevelopmentProblems = async (req, res) => {
         const skip = (page - 1) * limit
 
         const problems = await DevelopmentProblem.find(query)
-            .select('-codingProblem.solution -projectProblem.files')
+            .select('-projectProblem.files')
             .sort(sort)
             .skip(skip)
             .limit(parseInt(limit))
@@ -128,7 +128,7 @@ export const getDevelopmentProblem = async (req, res) => {
         const problem = await DevelopmentProblem.findOne({
             $or: [{ _id: id }, { slug: id }],
             isActive: true,
-        }).select('-codingProblem.solution')
+        }).select()
 
         if (!problem) {
             return res.status(404).json({
@@ -310,7 +310,7 @@ export const getDevelopmentStats = async (req, res) => {
             user: userId,
             problemType: 'development',
             status: 'solved',
-        }).populate('problemId', 'difficulty primaryTechnology topics type')
+        }).populate('problemId', 'difficulty technologies categories type')
 
         const difficultyBreakdown = {
             Beginner: 0,
@@ -319,18 +319,19 @@ export const getDevelopmentStats = async (req, res) => {
         }
 
         const technologyBreakdown = {}
-        const topicBreakdown = {}
+        const categoryBreakdown = {}
         const typeBreakdown = {}
 
         solvedProblems.forEach((progress) => {
             if (progress.problemId) {
                 difficultyBreakdown[progress.problemId.difficulty]++
 
-                const tech = progress.problemId.primaryTechnology
-                technologyBreakdown[tech] = (technologyBreakdown[tech] || 0) + 1
+                progress.problemId.technologies?.forEach((tech) => {
+                    technologyBreakdown[tech] = (technologyBreakdown[tech] || 0) + 1
+                })
 
-                progress.problemId.topics?.forEach((topic) => {
-                    topicBreakdown[topic] = (topicBreakdown[topic] || 0) + 1
+                progress.problemId.categories?.forEach((category) => {
+                    categoryBreakdown[category] = (categoryBreakdown[category] || 0) + 1
                 })
 
                 const type = progress.problemId.type
@@ -345,7 +346,7 @@ export const getDevelopmentStats = async (req, res) => {
                 totalAttempted,
                 difficultyBreakdown,
                 technologyBreakdown,
-                topicBreakdown,
+                categoryBreakdown,
                 typeBreakdown,
             },
         }
