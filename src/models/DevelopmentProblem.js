@@ -120,6 +120,10 @@ const developmentProblemSchema = new mongoose.Schema(
                     type: String,
                     default: 'npm install'
                 },
+                testCommand: {
+                    type: String,
+                    default: 'npm test'
+                },
                 port: {
                     type: Number,
                     default: 3000
