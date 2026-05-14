@@ -4,19 +4,31 @@ import {
     resetCacheStats,
     getCacheHealth,
     warmCache,
-    clearAllCache
+    clearAllCache,
+    getKeys,
+    getKey,
+    deleteKey,
+    deleteKeys,
+    setKey,
 } from '../controllers/cacheMonitoring.controller.js'
 import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
 
 const router = express.Router()
 
-// Public health check (no auth required)
+// ── Public ─────────────────────────────────────────────────────────────────
 router.get('/health', getCacheHealth)
 
-// Protected admin routes
-router.get('/stats', authenticateUser, isAdmin, getCacheStats)
-router.post('/stats/reset', authenticateUser, isAdmin, resetCacheStats)
-router.post('/warm', authenticateUser, isAdmin, warmCache)
-router.post('/clear', authenticateUser, isAdmin, clearAllCache)
+// ── Admin: stats & management ──────────────────────────────────────────────
+router.get('/stats',           authenticateUser, isAdmin, getCacheStats)
+router.post('/stats/reset',    authenticateUser, isAdmin, resetCacheStats)
+router.post('/warm',           authenticateUser, isAdmin, warmCache)
+router.post('/clear',          authenticateUser, isAdmin, clearAllCache)
+
+// ── Admin: key management ──────────────────────────────────────────────────
+router.get('/keys',            authenticateUser, isAdmin, getKeys)       // list keys
+router.post('/key',            authenticateUser, isAdmin, setKey)         // create/update key
+router.get('/key/:key',        authenticateUser, isAdmin, getKey)         // get single key value
+router.delete('/key/:key',     authenticateUser, isAdmin, deleteKey)      // delete single key
+router.delete('/keys/bulk',    authenticateUser, isAdmin, deleteKeys)     // bulk delete
 
 export default router
