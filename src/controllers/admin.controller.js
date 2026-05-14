@@ -9,6 +9,11 @@ import {
     CompanyApplication,
     MockInterviewSession,
 } from '../models/index.js'
+import { sendCustomEmail } from '../utils/email.utils.js'
+import { Queue } from 'bullmq'
+import redis from '../config/redis.js'
+
+const emailQueue = new Queue('bulk-email', { connection: redis })
 
 export const getAdminDashboard = async (req, res) => {
     try {
@@ -396,5 +401,65 @@ export const getPlatformStats = async (req, res) => {
             message: 'Error fetching statistics',
             error: error.message,
         })
+    }
+}
+
+export const sendEmailToUsers = async (req, res) => {
+    try {
+        const { userIds, sendToAll, subject, html } = req.body
+
+        if (!subject || !html) {
+            return res.status(400).json({ success: false, message: 'Subject and HTML body are required' })
+        }
+
+        let targetEmails = []
+
+        if (sendToAll) {
+            const users = await User.find({ isActive: true, email: { $exists: true, $ne: '' } }).select('email').lean()
+            targetEmails = users.map(u => u.email)
+        } else if (userIds && userIds.length > 0) {
+            const users = await User.find({ _id: { $in: userIds }, isActive: true }).select('email').lean()
+            targetEmails = users.map(u => u.email)
+        } else {
+            return res.status(400).json({ success: false, message: 'Must provide userIds or sendToAll=true' })
+        }
+
+        if (targetEmails.length === 0) {
+            return res.status(404).json({ success: false, message: 'No active users found to email' })
+        }
+
+        // Push task to BullMQ instead of blocking HTTP request
+        await emailQueue.add('send-bulk-email', {
+            targetEmails,
+            subject,
+            html
+        }, {
+            removeOnComplete: true,
+            removeOnFail: false
+        })
+
+        res.json({
+            success: true,
+            message: `Queued ${targetEmails.length} emails for delivery in the background`,
+            data: { queuedCount: targetEmails.length }
+        })
+
+    } catch (error) {
+        console.error('Error sending admin emails:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error sending emails',
+            error: error.message
+        })
+    }
+}
+
+export const getEmailQueueStatus = async (req, res) => {
+    try {
+        const counts = await emailQueue.getJobCounts('wait', 'active', 'completed', 'failed')
+        res.json({ success: true, counts })
+    } catch (error) {
+        console.error('Error fetching queue status:', error)
+        res.status(500).json({ success: false })
     }
 }
