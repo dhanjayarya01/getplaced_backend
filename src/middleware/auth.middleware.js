@@ -1,5 +1,11 @@
 // Middleware to check if user is authenticated (supports both session and JWT)
 export const authenticateUser = (req, res, next) => {
+    // Internal Cron Job Bypass
+    if (req.headers['x-internal-cron'] === 'true') {
+        req.user = { _id: 'cron', role: 'admin' } // Mock admin user for cron
+        return next()
+    }
+
     // Check if user is authenticated via session (Passport)
     if (req.isAuthenticated && req.isAuthenticated()) {
         return next()

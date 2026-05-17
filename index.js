@@ -8,7 +8,7 @@ import connectDB from './src/config/database.js'
 import configurePassport from './src/config/passport.js'
 import setupRoutes from './src/routes/index.js'
 import queueDashboard from './src/queues/dashboard.js'
-
+import './src/workers/notification.worker.js'
 
 dotenv.config()
 

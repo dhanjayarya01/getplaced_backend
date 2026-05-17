@@ -11,6 +11,7 @@ import {
     getPlatformStats,
     sendEmailToUsers,
     getEmailQueueStatus,
+    sendNotificationToUsers,
 } from '../controllers/admin.controller.js'
 import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
 import mockInterviewRoutes from './admin/mockInterview.admin.routes.js'
@@ -36,6 +37,7 @@ router.put('/users/:userId/role', updateUserRole)
 router.put('/users/:userId/deactivate', deactivateUser)
 router.post('/users/email', sendEmailToUsers)
 router.get('/users/email/status', getEmailQueueStatus)
+router.post('/users/notification', sendNotificationToUsers)
 
 // Mock Interview management
 router.use('/mock-interviews', mockInterviewRoutes)

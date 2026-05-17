@@ -11,6 +11,7 @@ import interviewSessionRoutes from './interviewSession.routes.js'
 import userProgressRoutes from './userProgress.routes.js'
 import cacheMonitoringRoutes from './cacheMonitoring.routes.js'
 import jobRoutes from './jobs.routes.js'
+import notificationRoutes from './notification.routes.js'
 import { startJobSyncCron } from '../services/jobSyncCron.js'
 
 export default function setupRoutes(app) {
@@ -28,6 +29,8 @@ export default function setupRoutes(app) {
     app.use('/api/user-progress', userProgressRoutes)
     app.use('/api/cache', cacheMonitoringRoutes) // Cache monitoring & management
     app.use('/api/jobs',  jobRoutes)              // Job board & ML recommendations
+    app.use('/api/notifications', notificationRoutes)
+
 
     // Start daily cron job for job scraping & ML evaluation
     startJobSyncCron()

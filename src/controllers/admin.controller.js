@@ -463,3 +463,56 @@ export const getEmailQueueStatus = async (req, res) => {
         res.status(500).json({ success: false })
     }
 }
+
+import { sendNotification } from '../queues/notification.queue.js'
+
+export const sendNotificationToUsers = async (req, res) => {
+    try {
+        const { userIds, sendToAll, title, message, type, linkUrl } = req.body
+
+        if (!title || !message) {
+            return res.status(400).json({ success: false, message: 'Title and message are required' })
+        }
+
+        let targetUsers = []
+
+        if (sendToAll) {
+            const users = await User.find({ isActive: true }).select('_id').lean()
+            targetUsers = users.map(u => u._id)
+        } else if (userIds && userIds.length > 0) {
+            const users = await User.find({ _id: { $in: userIds }, isActive: true }).select('_id').lean()
+            targetUsers = users.map(u => u._id)
+        } else {
+            return res.status(400).json({ success: false, message: 'Must provide userIds or sendToAll=true' })
+        }
+
+        if (targetUsers.length === 0) {
+            return res.status(404).json({ success: false, message: 'No active users found to notify' })
+        }
+
+        // Push tasks to BullMQ
+        for (const userId of targetUsers) {
+            await sendNotification({
+                userId: userId.toString(),
+                title,
+                message,
+                type: type || 'ADMIN_ALERT',
+                linkUrl
+            })
+        }
+
+        res.json({
+            success: true,
+            message: `Queued notifications for ${targetUsers.length} users`,
+            data: { queuedCount: targetUsers.length }
+        })
+
+    } catch (error) {
+        console.error('Error sending admin notifications:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Error sending notifications',
+            error: error.message
+        })
+    }
+}

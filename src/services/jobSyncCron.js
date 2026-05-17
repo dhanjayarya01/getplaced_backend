@@ -9,16 +9,16 @@ import fetch from 'node-fetch'
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || 'http://localhost:5000'
 
 export function startJobSyncCron() {
-    // Fire once immediately on startup (optional — comment out to skip)
-    // triggerSync()
+    // Fire once immediately on startup so it auto-runs when server boots
+    triggerSync()
 
-    // Schedule: every day at midnight (00:00)
-    cron.schedule('0 0 * * *', () => {
-        console.log('\n[Cron] ⏰ Daily job sync triggered at midnight')
+    // Schedule: every day at 8 AM and 8 PM IST
+    cron.schedule('0 8,20 * * *', () => {
+        console.log('\n[Cron] ⏰ Job sync triggered automatically')
         triggerSync()
     }, { timezone: 'Asia/Kolkata' })
 
-    console.log('[Cron] ✅ Daily job sync scheduled — runs every night at midnight IST')
+    console.log('[Cron] ✅ Daily job sync scheduled — runs at 8 AM and 8 PM IST')
 }
 
 async function triggerSync() {
