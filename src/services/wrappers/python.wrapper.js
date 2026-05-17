@@ -1,149 +1,117 @@
 /**
- * COMPREHENSIVE PYTHON WRAPPER GENERATOR - 95% COVERAGE
- * Supports 3800+ of 4000 DSA Problems
+ * COMPREHENSIVE PYTHON WRAPPER GENERATOR
+ * Uses Regex AST to extract perfect signatures from user code, ignoring broken DB metadata.
+ * Uses a bracket-aware splitter to handle multiline JSON testcases flawlessly.
  */
 export const generatePythonWrapper = (problem, userCode) => {
 
-    // ============================================================================
-    // EXTRACT METADATA
-    // ============================================================================
-    console.log('🔍 Python wrapper received problem:', { title: problem.title, slug: problem.slug, params: problem.parameters });
+    const metadata = problem.pythonMetadata || problem.metaData || {};
+    let fn = metadata.functionName || metadata.name || problem.functionName || problem.slug.replace(/-/g, '_');
 
-    const metadata = problem.pythonMetadata || {};
-    const fn = metadata.functionName || problem.functionName || problem.slug.replace(/-/g, '_');
+    let params = [];
+    let returnType = {};
 
-    let params = (metadata.parameters && metadata.parameters.length > 0)
-        ? metadata.parameters
-        : (problem.parameters || []);
+    const isDesign = problem.problemType === 'design';
+    const isInteractive = problem.problemType === 'interactive';
+    const outputParamIndex = metadata.outputParamIndex !== undefined ? metadata.outputParamIndex : 0;
 
-    const returnType = (metadata.returnType && metadata.returnType.type)
-        ? metadata.returnType
-        : (problem.returnType || {});
+    // 🚀 SMART SIGNATURE EXTRACTOR: Ignore broken DB metadata
+    if (!isDesign) {
+        const signatureMatch = userCode.match(/def\s+(\w+)\s*\(\s*(?:self\s*,?\s*)?(.*?)\)\s*(?:->\s*([^:]+))?:/);
+        if (signatureMatch) {
+            fn = signatureMatch[1];
+            const paramsStr = signatureMatch[2].trim();
+            if (paramsStr) {
+                let pList = [];
+                let bCount = 0;
+                let current = "";
+                for(let i=0; i<paramsStr.length; i++){
+                    let c = paramsStr[i];
+                    if(c === '[') bCount++;
+                    else if(c === ']') bCount--;
+                    else if(c === ',' && bCount === 0) {
+                        pList.push(current.trim());
+                        current = "";
+                        continue;
+                    }
+                    current += c;
+                }
+                if(current.trim().length > 0) pList.push(current.trim());
 
-    // ============================================================================
-    // TYPE MAPPING
-    // ============================================================================
+                params = pList.map((p) => {
+                    const parts = p.split(':');
+                    const name = parts[0].trim();
+                    const type = parts.length > 1 ? parts[1].trim() : 'int';
+                    return { name, type };
+                });
+            } else {
+                params = [];
+            }
+            if (signatureMatch[3]) {
+                returnType.type = signatureMatch[3].trim();
+            }
+        } else {
+            params = (metadata.parameters && metadata.parameters.length > 0) ? metadata.parameters : (problem.parameters || []);
+            returnType = (metadata.returnType && metadata.returnType.type) ? metadata.returnType : (metadata.return && metadata.return.type) ? metadata.return : (problem.returnType || {});
+        }
+    } else {
+        params = (metadata.parameters && metadata.parameters.length > 0) ? metadata.parameters : (problem.parameters || []);
+        returnType = (metadata.returnType && metadata.returnType.type) ? metadata.returnType : (metadata.return && metadata.return.type) ? metadata.return : (problem.returnType || {});
+    }
+
     const mapType = (cType, paramName) => {
         if (!cType) return 'int';
-
         const typeStr = typeof cType === 'string' ? cType : (cType.type || cType.cType || 'int');
 
-        // Direct Python types
+        if (typeStr.includes('Interval')) return 'IntervalArray';
+        if (typeStr.includes('Point')) return 'PointArray';
+
         if (typeStr.startsWith('List[')) return typeStr;
         if (typeStr.startsWith('Dict[')) return typeStr;
         if (typeStr.startsWith('Set[')) return typeStr;
         if (typeStr.startsWith('Tuple[')) return typeStr;
-        if (typeStr === 'Optional[ListNode]') return 'ListNode';
-        if (typeStr === 'Optional[TreeNode]') return 'TreeNode';
-        if (typeStr === 'Optional[Node]') return 'Node';
-        if (typeStr === 'Optional[GraphNode]') return 'GraphNode';
+        if (typeStr === 'Optional[ListNode]' || typeStr.includes('ListNode')) return 'Optional[ListNode]';
+        if (typeStr === 'Optional[TreeNode]' || typeStr.includes('TreeNode')) return 'Optional[TreeNode]';
+        if (typeStr === 'Optional[Node]') return 'Optional[Node]';
+        if (typeStr === 'Optional[GraphNode]' || typeStr.includes('GraphNode')) return 'Optional[GraphNode]';
 
-        // C/C++/Java to Python mapping
-        if (typeStr.includes('ListNode')) return 'Optional[ListNode]';
-        if (typeStr.includes('TreeNode')) return 'Optional[TreeNode]';
-        if (typeStr.includes('GraphNode')) return 'Optional[GraphNode]';
         if (typeStr.includes('Node') && !typeStr.includes('ListNode') && !typeStr.includes('TreeNode') && !typeStr.includes('GraphNode'))
             return 'Optional[Node]';
 
-        if (typeStr.includes('vector<vector<vector<int>>>') || typeStr === 'int[][][]')
-            return 'List[List[List[int]]]';
-        if (typeStr.includes('vector<vector<int>>') || typeStr === 'int[][]' || typeStr === 'List[List[int]]' || typeStr === 'List[List[Integer]]')
-            return 'List[List[int]]';
-        if (typeStr.includes('vector<vector<double>>') || typeStr === 'double[][]' || typeStr === 'List[List[double]]')
-            return 'List[List[float]]';
-        if (typeStr.includes('vector<vector<char>>') || typeStr === 'char[][]' || typeStr === 'List[List[char]]')
-            return 'List[List[str]]';
-        if (typeStr.includes('vector<vector<string>>') || typeStr === 'String[][]' || typeStr === 'List[List[String]]')
-            return 'List[List[str]]';
+        if (typeStr.includes('vector<vector<vector<int>>>') || typeStr === 'int[][][]') return 'List[List[List[int]]]';
+        if (typeStr.includes('vector<vector<int>>') || typeStr === 'int[][]' || typeStr === 'List[List[int]]') return 'List[List[int]]';
+        if (typeStr.includes('vector<vector<double>>') || typeStr === 'double[][]' || typeStr === 'List[List[double]]') return 'List[List[float]]';
+        if (typeStr.includes('vector<vector<string>>') || typeStr === 'String[][]' || typeStr === 'List[List[str]]') return 'List[List[str]]';
+        if (typeStr.includes('vector<int>') || typeStr === 'int[]' || typeStr === 'List[int]') return 'List[int]';
+        if (typeStr.includes('vector<double>') || typeStr === 'double[]' || typeStr === 'List[float]') return 'List[float]';
+        if (typeStr.includes('vector<bool>') || typeStr === 'boolean[]' || typeStr === 'List[bool]') return 'List[bool]';
+        if (typeStr.includes('vector<string>') || typeStr === 'String[]' || typeStr === 'List[str]') return 'List[str]';
 
-        if (typeStr.includes('vector<int>') || typeStr === 'int[]' || typeStr === 'int*' || typeStr === 'List[int]' || typeStr === 'List[Integer]')
-            return 'List[int]';
-        if (typeStr.includes('vector<double>') || typeStr === 'double[]' || typeStr === 'List[double]' || typeStr === 'List[Double]')
-            return 'List[float]';
-        if (typeStr.includes('vector<float>') || typeStr === 'float[]' || typeStr === 'List[float]')
-            return 'List[float]';
-        if (typeStr.includes('vector<bool>') || typeStr === 'boolean[]' || typeStr === 'List[bool]' || typeStr === 'List[Boolean]')
-            return 'List[bool]';
-        if (typeStr.includes('vector<char>') || typeStr === 'char[]' || typeStr === 'List[char]')
-            return 'List[str]';
-        if (typeStr.includes('vector<string>') || typeStr === 'String[]' || typeStr === 'List[String]' || typeStr === 'List[str]')
-            return 'List[str]';
-
-        if (typeStr === 'int' || typeStr === 'Integer') return 'int';
-        if (typeStr === 'long' || typeStr === 'long long' || typeStr === 'Long') return 'int';
-        if (typeStr === 'double' || typeStr === 'Double' || typeStr === 'float' || typeStr === 'Float') return 'float';
+        if (typeStr === 'int' || typeStr === 'Integer' || typeStr.includes('long')) return 'int';
+        if (typeStr === 'double' || typeStr === 'Double' || typeStr === 'float') return 'float';
         if (typeStr === 'bool' || typeStr === 'boolean' || typeStr === 'Boolean') return 'bool';
-        if (typeStr === 'char' || typeStr === 'Character') return 'str';
-        if (typeStr === 'string' || typeStr === 'String' || typeStr === 'str') return 'str';
+        if (typeStr === 'char' || typeStr === 'string' || typeStr === 'String' || typeStr === 'str') return 'str';
         if (typeStr === 'void' || typeStr === 'None') return 'None';
 
-        // Heuristics
-        if (paramName && (paramName.includes('arr') || paramName.includes('nums'))) return 'List[int]';
-        if (paramName && paramName.includes('matrix')) return 'List[List[int]]';
-
-        return 'int';
+        return typeStr;
     };
 
-    // Sanitize parameter name helper
     const sanitizeName = (name) => {
         if (!name) return 'param';
-        // Remove invalid Python identifier characters (keep only letters, numbers, underscores)
         let clean = String(name).replace(/[^a-zA-Z0-9_]/g, '_');
-        // Ensure doesn't start with number
         if (/^\d/.test(clean)) clean = 'param_' + clean;
-        // Ensure not empty or just underscores
         if (!clean || clean === '_') clean = 'param';
         return clean;
     };
 
-    // Smart type inference helper for when database metadata is incomplete
-    const inferType = (param, problemTitle, problemSlug) => {
-        const name = (param.name || '').toLowerCase();
-        const title = (problemTitle || '').toLowerCase();
-        const slug = (problemSlug || '').toLowerCase();
-
-        // Detect LinkedList problems - check original name for val/next patterns
-        const origName = (param.name || '').toLowerCase();
-        if (title.includes('linked list') || title.includes('list node') || slug.includes('linked') || slug.includes('addtwonumbers') || title.includes('add two')) {
-            if (name.includes('l1') || name.includes('l2') || name.includes('head') || name.includes('list') || origName.startsWith('val') || origName.startsWith('next')) {
-                console.log(`✅ OVERRIDE ListNode: ${param.name} (was ${param.type})`);
-                return 'Optional[ListNode]';
-            }
-        }
-
-        // Detect Tree problems
-        if (title.includes('tree') || title.includes('binary') || slug.includes('tree')) {
-            if (name.includes('root') || name.includes('node') || name.includes('tree')) {
-                return 'Optional[TreeNode]';
-            }
-        }
-
-        // Use existing type if available
-        return param.type || mapType(param.cType, param.name);
-    };
-
-    // Normalize and sanitize parameters with smart type inference
     params = params.map(p => ({
         name: sanitizeName(p.name),
-        type: inferType(p, problem.title, problem.slug)
+        type: p.type || mapType(p.cType, p.name)
     }));
 
-    console.log('🔍 Inferred parameter types:', params);
-
-    // Normalize return type
     const normalizedReturnType = returnType.type || mapType(returnType.cType, 'return');
     const isVoidReturn = normalizedReturnType === 'None' || normalizedReturnType === 'void';
 
-    // Detect types used
-    const allTypes = [...params.map(p => p.type), normalizedReturnType].filter(Boolean).join(' ');
-    const usesListNode = allTypes.includes('ListNode');
-    const usesTreeNode = allTypes.includes('TreeNode');
-    const usesNaryTree = allTypes.includes('Node') && !allTypes.includes('ListNode') && !allTypes.includes('TreeNode') && !allTypes.includes('GraphNode');
-    const usesGraphNode = allTypes.includes('GraphNode');
-
-    // ============================================================================
-    // HEADER CODE WITH ALL IMPORTS AND DATA STRUCTURES
-    // ============================================================================
     const headerCode = `import sys
 import json
 sys.setrecursionlimit(10000)
@@ -158,54 +126,87 @@ import math
 # DATA STRUCTURE DEFINITIONS
 # ============================================================================
 
-# Singly Linked List
 class ListNode:
-    def __init__(self, val=0, next=None):
+    def __init__(self, val=0, next=None, random=None):
         self.val = val
         self.next = next
+        self.random = random
 
-# Binary Tree
 class TreeNode:
     def __init__(self, val=0, left=None, right=None):
         self.val = val
         self.left = left
         self.right = right
 
-# N-ary Tree
 class Node:
     def __init__(self, val=None, children=None):
         self.val = val
         self.children = children if children is not None else []
 
-# Graph Node
 class GraphNode:
     def __init__(self, val=0, neighbors=None):
         self.val = val
         self.neighbors = neighbors if neighbors is not None else []
 
-# ============================================================================
-# HELPER UTILITIES
-# ============================================================================
+class Interval:
+    def __init__(self, start=0, end=0):
+        self.start = start
+        self.end = end
 
-def is_null(val):
-    """Check if value is null/None"""
-    return val is None or str(val).strip().lower() in ['null', 'none', '']
-
-def strip_quotes(s: str) -> str:
-    """Remove surrounding quotes from string"""
-    s = s.strip()
-    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
-        return s[1:-1]
-    return s
+class Point:
+    def __init__(self, x=0, y=0):
+        self.x = x
+        self.y = y
 
 # ============================================================================
 # DESERIALIZATION HELPERS
 # ============================================================================
 
+def split_inputs(all_inputs):
+    res = []
+    brace_count = 0
+    bracket_count = 0
+    in_quote = False
+    curr = []
+    for i, c in enumerate(all_inputs):
+        if c == '"' and (i == 0 or all_inputs[i-1] != '\\\\'):
+            in_quote = not in_quote
+        elif not in_quote:
+            if c == '{': brace_count += 1
+            elif c == '}': brace_count -= 1
+            elif c == '[': bracket_count += 1
+            elif c == ']': bracket_count -= 1
+        
+        if c == '\\n' and brace_count == 0 and bracket_count == 0 and not in_quote:
+            j = "".join(curr).strip()
+            if j: res.append(j)
+            curr = []
+        else:
+            curr.append(c)
+    
+    j = "".join(curr).strip()
+    if j: res.append(j)
+    return res
+
 def to_linked_list(arr):
-    """Convert array to singly linked list"""
-    if not arr:
-        return None
+    if not arr: return None
+    
+    if isinstance(arr[0], list):
+        # Random pointer array
+        nodes = []
+        head = ListNode(arr[0][0])
+        nodes.append(head)
+        curr = head
+        for i in range(1, len(arr)):
+            curr.next = ListNode(arr[i][0])
+            curr = curr.next
+            nodes.append(curr)
+        for i in range(len(arr)):
+            rand_idx = arr[i][1]
+            if rand_idx is not None and 0 <= rand_idx < len(nodes):
+                nodes[i].random = nodes[rand_idx]
+        return head
+        
     head = ListNode(arr[0])
     curr = head
     for i in range(1, len(arr)):
@@ -214,83 +215,61 @@ def to_linked_list(arr):
     return head
 
 def to_binary_tree(arr):
-    """Convert array to binary tree (level-order with nulls)"""
-    if not arr or arr[0] is None:
-        return None
-    
+    if not arr or arr[0] is None: return None
     root = TreeNode(arr[0])
     queue = [root]
     i = 1
-    
     while queue and i < len(arr):
         node = queue.pop(0)
-        
-        # Left child
         if i < len(arr) and arr[i] is not None:
             node.left = TreeNode(arr[i])
             queue.append(node.left)
         i += 1
-        
-        # Right child
         if i < len(arr) and arr[i] is not None:
             node.right = TreeNode(arr[i])
             queue.append(node.right)
         i += 1
-    
     return root
 
 def to_nary_tree(arr):
-    """Convert array to N-ary tree: [1,null,3,2,4,null,5,6]"""
-    if not arr or arr[0] is None:
-        return None
-    
+    if not arr or arr[0] is None: return None
     root = Node(arr[0])
     queue = [root]
-    i = 2  # Skip root and first null
-    
+    i = 2
     while queue and i < len(arr):
         node = queue.pop(0)
-        
-        # Collect children until null
         while i < len(arr) and arr[i] is not None:
             child = Node(arr[i])
             node.children.append(child)
             queue.append(child)
             i += 1
-        i += 1  # Skip null separator
-    
+        i += 1
     return root
 
 def to_graph(arr):
-    """Convert adjacency list to graph: [[2,4],[1,3],[2,4],[1,3]]"""
-    if not arr:
-        return None
-    
-    # Create all nodes first
+    if not arr: return None
     nodes = [GraphNode(i + 1) for i in range(len(arr))]
-    
-    # Build connections
     for i, neighbors in enumerate(arr):
         for neighbor_val in neighbors:
             if 1 <= neighbor_val <= len(nodes):
                 nodes[i].neighbors.append(nodes[neighbor_val - 1])
-    
     return nodes[0] if nodes else None
 
-def parse_3d_list(arr):
-    """Parse 3D list from JSON"""
-    return arr  # Already parsed by json.loads
+def to_interval_array(arr):
+    if not arr: return []
+    return [Interval(a[0], a[1]) for a in arr]
+
+def to_point_array(arr):
+    if not arr: return []
+    return [Point(a[0], a[1]) for a in arr]
 
 def parse_tuple(arr):
-    """Convert list to tuple"""
     return tuple(arr) if isinstance(arr, list) else arr
 
 def parse_set(arr):
-    """Convert list to set"""
     return set(arr) if isinstance(arr, list) else arr
 
 def parse_dict(obj):
-    """Parse dictionary"""
     return obj if isinstance(obj, dict) else {}
 
 # ============================================================================
@@ -298,22 +277,30 @@ def parse_dict(obj):
 # ============================================================================
 
 def list_node_to_array(head):
-    """Convert linked list to array"""
     arr = []
     curr = head
+    is_random = False
+    nodes_map = {}
+    idx = 0
     while curr:
-        arr.append(curr.val)
+        nodes_map[curr] = idx
+        if getattr(curr, 'random', None) is not None: is_random = True
+        curr = curr.next
+        idx += 1
+    curr = head
+    while curr:
+        if is_random:
+            rand_idx = nodes_map.get(curr.random) if curr.random else None
+            arr.append([curr.val, rand_idx])
+        else:
+            arr.append(curr.val)
         curr = curr.next
     return arr
 
 def tree_node_to_array(root):
-    """Convert binary tree to array (level-order with nulls)"""
-    if not root:
-        return []
-    
+    if not root: return []
     output = []
     queue = [root]
-    
     while queue:
         node = queue.pop(0)
         if node:
@@ -322,154 +309,139 @@ def tree_node_to_array(root):
             queue.append(node.right)
         else:
             output.append(None)
-    
-    # Trim trailing Nones
     while output and output[-1] is None:
         output.pop()
-    
     return output
 
 def nary_tree_to_array(root):
-    """Convert N-ary tree to array"""
-    if not root:
-        return []
-    
+    if not root: return []
     result = [root.val, None]
     queue = [root]
-    
     while queue:
         node = queue.pop(0)
         for child in node.children:
             result.append(child.val)
             queue.append(child)
         result.append(None)
-    
-    # Remove last null
-    if result:
-        result.pop()
-    
+    if result and result[-1] is None: result.pop()
     return result
 
 def graph_to_adjacency_list(node):
-    """Convert graph to adjacency list"""
-    if not node:
-        return []
-    
+    if not node: return []
     visited = {}
     result = []
-    
     def dfs(curr):
-        if curr.val in visited:
-            return
+        if curr.val in visited: return
         visited[curr.val] = True
         neighbors = [n.val for n in curr.neighbors]
         result.append(neighbors)
-        for neighbor in curr.neighbors:
-            dfs(neighbor)
-    
+        for neighbor in curr.neighbors: dfs(neighbor)
     dfs(node)
     return result
+
+def serialize_value(val):
+    if val is None: return "null"
+    if isinstance(val, ListNode): return json.dumps(list_node_to_array(val), separators=(',', ':'))
+    if isinstance(val, TreeNode): return json.dumps(tree_node_to_array(val), separators=(',', ':'))
+    if isinstance(val, Node): return json.dumps(nary_tree_to_array(val), separators=(',', ':'))
+    if isinstance(val, GraphNode): return json.dumps(graph_to_adjacency_list(val), separators=(',', ':'))
+    if isinstance(val, set): return json.dumps(sorted(list(val)), separators=(',', ':'))
+    if isinstance(val, tuple): return json.dumps(list(val), separators=(',', ':'))
+    if isinstance(val, list) and len(val)>0 and isinstance(val[0], Interval): return json.dumps([[i.start, i.end] for i in val], separators=(',', ':'))
+    if isinstance(val, list) and len(val)>0 and isinstance(val[0], Point): return json.dumps([[p.x, p.y] for p in val], separators=(',', ':'))
+    return json.dumps(val, separators=(',', ':'))
 `;
 
-    // ============================================================================
-    // GENERATE INPUT PARSING
-    // ============================================================================
+    const interactiveHelpers = isInteractive ? `
+# ============================================================================
+# INTERACTIVE API MOCKS
+# ============================================================================
+_hidden_target = 0
+def isBadVersion(version):
+    global _hidden_target
+    return version >= _hidden_target
+
+def guess(num):
+    global _hidden_target
+    if num > _hidden_target: return -1
+    if num < _hidden_target: return 1
+    return 0
+` : '';
+
     let parseCode = "";
-    let callArgs = [];
-
-    params.forEach((param) => {
-        const { name, type } = param;
-        const rawVar = `raw_${name}`;
-
-        parseCode += `        ${rawVar} = json.loads(input().strip())\n`;
-
-        if (type === 'Optional[ListNode]' || type === 'ListNode') {
-            parseCode += `        ${name} = to_linked_list(${rawVar})\n`;
-        } else if (type === 'Optional[TreeNode]' || type === 'TreeNode') {
-            parseCode += `        ${name} = to_binary_tree(${rawVar})\n`;
-        } else if (type === 'Optional[Node]' || type === 'Node') {
-            parseCode += `        ${name} = to_nary_tree(${rawVar})\n`;
-        } else if (type === 'Optional[GraphNode]' || type === 'GraphNode') {
-            parseCode += `        ${name} = to_graph(${rawVar})\n`;
-        } else if (type.startsWith('Tuple[')) {
-            parseCode += `        ${name} = parse_tuple(${rawVar})\n`;
-        } else if (type.startsWith('Set[')) {
-            parseCode += `        ${name} = parse_set(${rawVar})\n`;
-        } else if (type.startsWith('Dict[')) {
-            parseCode += `        ${name} = parse_dict(${rawVar})\n`;
-        } else if (type === 'List[List[List[int]]]') {
-            parseCode += `        ${name} = parse_3d_list(${rawVar})\n`;
-        } else {
-            // Direct use (primitives, lists, etc.)
-            parseCode += `        ${name} = ${rawVar}\n`;
-        }
-
-        callArgs.push(name);
-    });
-
-    const callArgsStr = callArgs.join(', ');
-
-    // ============================================================================
-    // GENERATE FUNCTION CALL
-    // ============================================================================
-    const isClassMethod = /class\s+Solution/.test(userCode);
-    let functionCall;
-
-    if (isVoidReturn) {
-        // Void functions don't assign result
-        if (isClassMethod) {
-            functionCall = `        sol = Solution()\n        sol.${fn}(${callArgsStr})`;
-        } else {
-            functionCall = `        ${fn}(${callArgsStr})`;
-        }
-    } else {
-        // Regular functions assign result
-        if (isClassMethod) {
-            functionCall = `        sol = Solution()\n        result = sol.${fn}(${callArgsStr})`;
-        } else {
-            functionCall = `        result = ${fn}(${callArgsStr})`;
-        }
-    }
-
-    // ============================================================================
-    // GENERATE OUTPUT CODE
-    // ============================================================================
+    let functionCall = "";
     let printCode = "";
 
-    if (isVoidReturn) {
-        // For void returns, print the first parameter (usually modified in-place)
-        if (params.length > 0) {
-            const firstParam = params[0];
-            if (firstParam.type.includes('List')) {
-                printCode = `        print(json.dumps(${firstParam.name}, separators=(',', ':')))`;
-            } else {
-                printCode = `        print(json.dumps(${firstParam.name}, separators=(',', ':')))`;
-            }
-        }
-    } else if (normalizedReturnType === 'Optional[ListNode]' || normalizedReturnType === 'ListNode') {
-        printCode = `        out_arr = list_node_to_array(result)\n        print(json.dumps(out_arr, separators=(',', ':')))`;
-    } else if (normalizedReturnType === 'Optional[TreeNode]' || normalizedReturnType === 'TreeNode') {
-        printCode = `        out_arr = tree_node_to_array(result)\n        print(json.dumps(out_arr, separators=(',', ':')))`;
-    } else if (normalizedReturnType === 'Optional[Node]' || normalizedReturnType === 'Node') {
-        printCode = `        out_arr = nary_tree_to_array(result)\n        print(json.dumps(out_arr, separators=(',', ':')))`;
-    } else if (normalizedReturnType === 'Optional[GraphNode]' || normalizedReturnType === 'GraphNode') {
-        printCode = `        out_arr = graph_to_adjacency_list(result)\n        print(json.dumps(out_arr, separators=(',', ':')))`;
-    } else if (normalizedReturnType.startsWith('Tuple[')) {
-        printCode = `        print(json.dumps(list(result), separators=(',', ':')))`;
-    } else if (normalizedReturnType.startsWith('Set[')) {
-        printCode = `        print(json.dumps(sorted(list(result)), separators=(',', ':')))`;
+    if (isDesign) {
+        parseCode = `
+        lines = split_inputs(sys.stdin.read())
+        commands = json.loads(lines[0])
+        all_args = json.loads(lines[1])
+        output = []
+        obj = None
+        class_ref = globals().get(commands[0])
+        if not class_ref: raise Exception("Class not found: " + commands[0])
+        for i in range(len(commands)):
+            cmd = commands[i]
+            args = all_args[i]
+            if i == 0:
+                obj = class_ref(*args)
+                output.append(None)
+            else:
+                method = getattr(obj, cmd, None)
+                if method:
+                    res = method(*args)
+                    output.append(res)
+                else:
+                    output.append(None)
+        print(json.dumps(output, separators=(',', ':')))
+        `;
     } else {
-        // Default JSON output
-        printCode = `        print(json.dumps(result, separators=(',', ':')))`;
+        parseCode = `        lines = split_inputs(sys.stdin.read())\n`;
+        if (isInteractive) {
+            parseCode += `
+        global _hidden_target
+        if len(lines) > ${params.length}: _hidden_target = json.loads(lines[-1])
+        `;
+        }
+        
+        let callArgs = [];
+        params.forEach((param, index) => {
+            const { name, type } = param;
+            parseCode += `        raw_${name} = json.loads(lines[${index}]) if len(lines) > ${index} else None\n`;
+            if (type === 'Optional[ListNode]' || type === 'ListNode') parseCode += `        ${name} = to_linked_list(raw_${name})\n`;
+            else if (type === 'Optional[TreeNode]' || type === 'TreeNode') parseCode += `        ${name} = to_binary_tree(raw_${name})\n`;
+            else if (type === 'Optional[Node]' || type === 'Node') parseCode += `        ${name} = to_nary_tree(raw_${name})\n`;
+            else if (type === 'Optional[GraphNode]' || type === 'GraphNode') parseCode += `        ${name} = to_graph(raw_${name})\n`;
+            else if (type === 'IntervalArray') parseCode += `        ${name} = to_interval_array(raw_${name})\n`;
+            else if (type === 'PointArray') parseCode += `        ${name} = to_point_array(raw_${name})\n`;
+            else if (type.startsWith('Tuple[')) parseCode += `        ${name} = parse_tuple(raw_${name})\n`;
+            else if (type.startsWith('Set[')) parseCode += `        ${name} = parse_set(raw_${name})\n`;
+            else if (type.startsWith('Dict[')) parseCode += `        ${name} = parse_dict(raw_${name})\n`;
+            else if (type === 'List[List[List[int]]]') parseCode += `        ${name} = raw_${name}\n`;
+            else parseCode += `        ${name} = raw_${name}\n`;
+            callArgs.push(name);
+        });
+
+        const callArgsStr = callArgs.join(', ');
+        const isClassMethod = /class\s+Solution/.test(userCode);
+
+        if (isVoidReturn) {
+            if (isClassMethod) functionCall = `        sol = Solution()\n        sol.${fn}(${callArgsStr})`;
+            else functionCall = `        ${fn}(${callArgsStr})`;
+            
+            if (params.length > outputParamIndex) {
+                printCode = `        print(serialize_value(${params[outputParamIndex].name}))`;
+            }
+        } else {
+            if (isClassMethod) functionCall = `        sol = Solution()\n        result = sol.${fn}(${callArgsStr})`;
+            else functionCall = `        result = ${fn}(${callArgsStr})`;
+            printCode = `        print(serialize_value(result))`;
+        }
     }
 
-    printCode += `\n        sys.stdout.flush()`;
-
-    // ============================================================================
-    // ASSEMBLE FINAL CODE
-    // ============================================================================
     return `${headerCode}
-
+${interactiveHelpers}
 ${userCode}
 
 if __name__ == "__main__":
