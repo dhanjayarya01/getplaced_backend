@@ -7,9 +7,16 @@ export const generateJavaScriptWrapper = (problem, userCode) => {
 
     const metadata = problem.metaData || {};
     let fn = metadata.functionName || metadata.name || problem.functionName;
-    const isDesign = problem.problemType === 'design';
+    let isDesign = problem.problemType === 'design';
     const isInteractive = problem.problemType === 'interactive';
     const outputParamIndex = metadata.outputParamIndex !== undefined ? metadata.outputParamIndex : 0;
+
+    // Auto-detect design problems
+    const BUILTIN_CLASSES = new Set(['Solution','ListNode','TreeNode','Node','GraphNode','Interval','Point']);
+    const classNames = [...userCode.matchAll(/^class\s+(\w+)/gm)].map(m => m[1]);
+    if (!isDesign && !isInteractive && classNames.some(c => !BUILTIN_CLASSES.has(c))) {
+        isDesign = true;
+    }
 
     let params = [];
     let returnType = {};

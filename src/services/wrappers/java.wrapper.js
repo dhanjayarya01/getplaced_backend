@@ -7,9 +7,16 @@ export const generateJavaWrapper = (problem, userCode) => {
 
     const metadata = problem.javaMetadata || problem.metaData || {};
     let fn = metadata.functionName || metadata.name || problem.functionName;
-    const isDesign = problem.problemType === 'design';
+    let isDesign = problem.problemType === 'design';
     const isInteractive = problem.problemType === 'interactive';
     const outputParamIndex = metadata.outputParamIndex !== undefined ? metadata.outputParamIndex : 0;
+
+    // Auto-detect design problems: if user code defines a class other than Solution/known data structures
+    const BUILTIN_CLASSES = new Set(['Solution','ListNode','TreeNode','Node','GraphNode','Interval','Point']);
+    const classNames = [...userCode.matchAll(/^class\s+(\w+)/gm)].map(m => m[1]);
+    if (!isDesign && !isInteractive && classNames.some(c => !BUILTIN_CLASSES.has(c))) {
+        isDesign = true;
+    }
 
     let params = [];
     let returnType = {};
@@ -79,20 +86,23 @@ export const generateJavaWrapper = (problem, userCode) => {
         if (typeStr.includes('vector<vector<string>>') || typeStr === 'String[][]' || typeStr === 'List<List<String>>') return 'String[][]';
         if (typeStr.includes('vector<vector<char>>') || typeStr === 'char[][]' || typeStr === 'List<List<Character>>') return 'char[][]';
         
-        if (typeStr.includes('vector<int>') || typeStr.endsWith('[]') && typeStr.includes('int') || typeStr === 'List<Integer>') return 'int[]';
-        if (typeStr.includes('vector<double>') || typeStr.endsWith('[]') && typeStr.includes('double') || typeStr === 'List<Double>') return 'double[]';
-        if (typeStr.includes('vector<string>') || typeStr.endsWith('[]') && typeStr.includes('String') || typeStr === 'List<String>') return 'String[]';
-        if (typeStr.includes('vector<char>') || typeStr.endsWith('[]') && typeStr.includes('char') || typeStr === 'List<Character>') return 'char[]';
-        if (typeStr.includes('vector<boolean>') || typeStr.endsWith('[]') && typeStr.includes('boolean') || typeStr === 'List<Boolean>') return 'boolean[]';
+        if (typeStr.includes('vector<long>') || typeStr === 'long[]' || typeStr === 'List<Long>') return 'long[]';
+        if (typeStr.includes('vector<int>') || typeStr === 'int[]' || typeStr === 'List<Integer>') return 'int[]';
+        if (typeStr.includes('vector<double>') || typeStr === 'double[]' || typeStr === 'List<Double>') return 'double[]';
+        if (typeStr.includes('vector<string>') || typeStr === 'String[]' || typeStr === 'List<String>') return 'String[]';
+        if (typeStr.includes('vector<char>') || typeStr === 'char[]' || typeStr === 'List<Character>') return 'char[]';
+        if (typeStr.includes('vector<boolean>') || typeStr === 'boolean[]' || typeStr === 'List<Boolean>') return 'boolean[]';
 
-        if (typeStr === 'int' || typeStr === 'Integer' || typeStr.includes('long')) return 'int';
-        if (typeStr === 'double' || typeStr === 'Double' || typeStr === 'float') return 'double';
+        if (typeStr === 'long' || typeStr === 'Long' || typeStr === 'long long') return 'long';
+        if (typeStr === 'int' || typeStr === 'Integer') return 'int';
+        if (typeStr === 'double' || typeStr === 'Double') return 'double';
+        if (typeStr === 'float' || typeStr === 'Float') return 'float';
         if (typeStr === 'boolean' || typeStr === 'Boolean' || typeStr === 'bool') return 'boolean';
         if (typeStr === 'char' || typeStr === 'Character') return 'char';
         if (typeStr === 'String' || typeStr === 'string' || typeStr === 'str') return 'String';
         if (typeStr === 'void' || typeStr === 'None') return 'void';
 
-        return typeStr; // Fallback to whatever was parsed from code
+        return typeStr;
     };
 
     const isVoidReturn = javaType(returnType.type || returnType.cType, 'return') === 'void';
@@ -309,6 +319,41 @@ class Helper {
         return root;
     }
     
+    public static long[] toLongArray(String s) {
+        String[] arr = parseArray(s);
+        long[] res = new long[arr.length];
+        for(int i=0; i<arr.length; i++) res[i] = Long.parseLong(arr[i].trim());
+        return res;
+    }
+    
+    public static double[] toDoubleArray(String s) {
+        String[] arr = parseArray(s);
+        double[] res = new double[arr.length];
+        for(int i=0; i<arr.length; i++) res[i] = Double.parseDouble(arr[i].trim());
+        return res;
+    }
+    
+    public static boolean[] toBoolArray(String s) {
+        String[] arr = parseArray(s);
+        boolean[] res = new boolean[arr.length];
+        for(int i=0; i<arr.length; i++) res[i] = Boolean.parseBoolean(arr[i].trim());
+        return res;
+    }
+    
+    public static char[] toCharArray(String s) {
+        String[] arr = parseArray(s);
+        char[] res = new char[arr.length];
+        for(int i=0; i<arr.length; i++) res[i] = stripQuotes(arr[i]).charAt(0);
+        return res;
+    }
+    
+    public static char[][] toChar2DArray(String s) {
+        String[] arr = parseArray(s);
+        char[][] res = new char[arr.length][];
+        for(int i=0; i<arr.length; i++) res[i] = toCharArray(arr[i]);
+        return res;
+    }
+    
     public static String serialize(Object o) {
         if(o == null) return "null";
         if(o instanceof int[]) return Arrays.toString((int[])o).replaceAll(" ", "");
@@ -322,12 +367,22 @@ class Helper {
             sb.append("]");
             return sb.toString();
         }
+        if(o instanceof List) {
+            StringBuilder sb = new StringBuilder("[");
+            List<?> list = (List<?>)o;
+            for(int i=0; i<list.size(); i++) {
+                if(i>0) sb.append(",");
+                sb.append(serialize(list.get(i)));
+            }
+            sb.append("]");
+            return sb.toString();
+        }
         if(o instanceof String[]) {
             StringBuilder sb = new StringBuilder("[");
             String[] a = (String[])o;
             for(int i=0; i<a.length; i++) {
                 if(i>0) sb.append(",");
-                sb.append("\\"").append(a[i]).append("\\"");
+                sb.append((char)34).append(a[i]).append((char)34);
             }
             sb.append("]");
             return sb.toString();
@@ -373,7 +428,34 @@ class Helper {
             while(res.size() > 0 && res.get(res.size()-1).equals("null")) res.remove(res.size()-1);
             return "[" + String.join(",", res) + "]";
         }
-        if(o instanceof String) return "\\"" + o + "\\"";
+        if(o instanceof long[]) {
+            StringBuilder sb = new StringBuilder("["); long[] a = (long[])o;
+            for(int i=0; i<a.length; i++) { if(i>0) sb.append(","); sb.append(a[i]); }
+            return sb.append("]").toString();
+        }
+        if(o instanceof double[]) {
+            StringBuilder sb = new StringBuilder("["); double[] a = (double[])o;
+            for(int i=0; i<a.length; i++) { if(i>0) sb.append(","); sb.append(a[i]); }
+            return sb.append("]").toString();
+        }
+        if(o instanceof boolean[]) {
+            StringBuilder sb = new StringBuilder("["); boolean[] a = (boolean[])o;
+            for(int i=0; i<a.length; i++) { if(i>0) sb.append(","); sb.append(a[i]); }
+            return sb.append("]").toString();
+        }
+        if(o instanceof char[]) {
+            StringBuilder sb = new StringBuilder("["); char[] a = (char[])o;
+            for(int i=0; i<a.length; i++) { if(i>0) sb.append(","); sb.append((char)34).append(a[i]).append((char)34); }
+            return sb.append("]").toString();
+        }
+        if(o instanceof char[][]) {
+            StringBuilder sb = new StringBuilder("["); char[][] a = (char[][])o;
+            for(int i=0; i<a.length; i++) { if(i>0) sb.append(","); sb.append("[");
+                for(int j=0; j<a[i].length; j++) { if(j>0) sb.append(","); sb.append((char)34).append(a[i][j]).append((char)34); }
+                sb.append("]"); }
+            return sb.append("]").toString();
+        }
+        if(o instanceof String) return String.valueOf((char)34) + o + (char)34;
         return String.valueOf(o);
     }
 }
@@ -471,11 +553,18 @@ class Helper {
             
             // Generate parser based on extracted type
             if(jType === 'int') reads += `        int p${i} = Helper.toInt(raw_${i});\n`;
-            else if(jType === 'double') reads += `        double p${i} = Helper.toDouble(raw_${i});\n`;
+            else if(jType === 'long') reads += `        long p${i} = Long.parseLong(raw_${i}.trim());\n`;
+            else if(jType === 'double' || jType === 'float') reads += `        double p${i} = Double.parseDouble(raw_${i}.trim());\n`;
             else if(jType === 'boolean') reads += `        boolean p${i} = Helper.toBoolean(raw_${i});\n`;
+            else if(jType === 'char') reads += `        char p${i} = Helper.stripQuotes(raw_${i}).charAt(0);\n`;
             else if(jType === 'String') reads += `        String p${i} = Helper.stripQuotes(raw_${i});\n`;
             else if(jType === 'int[]') reads += `        int[] p${i} = Helper.toIntArray(raw_${i});\n`;
+            else if(jType === 'long[]') reads += `        long[] p${i} = Helper.toLongArray(raw_${i});\n`;
+            else if(jType === 'double[]') reads += `        double[] p${i} = Helper.toDoubleArray(raw_${i});\n`;
+            else if(jType === 'boolean[]') reads += `        boolean[] p${i} = Helper.toBoolArray(raw_${i});\n`;
+            else if(jType === 'char[]') reads += `        char[] p${i} = Helper.toCharArray(raw_${i});\n`;
             else if(jType === 'int[][]') reads += `        int[][] p${i} = Helper.toInt2DArray(raw_${i});\n`;
+            else if(jType === 'char[][]') reads += `        char[][] p${i} = Helper.toChar2DArray(raw_${i});\n`;
             else if(jType === 'String[]') reads += `        String[] p${i} = Helper.toStringArray(raw_${i});\n`;
             else if(jType === 'ListNode') reads += `        ListNode p${i} = Helper.toLinkedList(raw_${i});\n`;
             else if(jType === 'ListNode[]') reads += `        ListNode[] p${i} = Helper.toLinkedListArray(raw_${i});\n`;

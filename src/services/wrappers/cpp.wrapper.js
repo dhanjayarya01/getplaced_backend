@@ -7,9 +7,16 @@ export const generateCPPWrapper = (problem, userCode) => {
 
     const metadata = problem.cppMetadata || problem.metaData || {};
     let fn = metadata.functionName || metadata.name || problem.functionName;
-    const isDesign = problem.problemType === 'design';
+    let isDesign = problem.problemType === 'design';
     const isInteractive = problem.problemType === 'interactive';
     const outputParamIndex = metadata.outputParamIndex !== undefined ? metadata.outputParamIndex : 0;
+
+    // Auto-detect design problems
+    const BUILTIN_CLASSES = new Set(['Solution','ListNode','TreeNode','Node','GraphNode','Interval','Point']);
+    const classNames = [...userCode.matchAll(/^class\s+(\w+)/gm)].map(m => m[1]);
+    if (!isDesign && !isInteractive && classNames.some(c => !BUILTIN_CLASSES.has(c))) {
+        isDesign = true;
+    }
 
     let params = [];
     let returnType = {};
@@ -379,9 +386,41 @@ public:
     }
 
     static string serialize(int val) { return to_string(val); }
-    static string serialize(double val) { return to_string(val); }
+    static string serialize(long long val) { return to_string(val); }
+    static string serialize(double val) { 
+        string s = to_string(val);
+        s.erase(s.find_last_not_of('0') + 1, string::npos);
+        if(s.back() == '.') s += '0';
+        return s;
+    }
     static string serialize(bool val) { return val ? "true" : "false"; }
-    static string serialize(string val) { return "\\"" + val + "\\""; }
+    static string serialize(char val) { return string(1, (char)34) + val + (char)34; }
+    static string serialize(string val) { return string(1, (char)34) + val + (char)34; }
+    
+    static vector<long long> toLongArray(string s) {
+        vector<string> arr = parseArray(s); vector<long long> res;
+        for(auto& x : arr) res.push_back(toLong(x)); return res;
+    }
+    static vector<double> toDoubleArray(string s) {
+        vector<string> arr = parseArray(s); vector<double> res;
+        for(auto& x : arr) res.push_back(toDouble(x)); return res;
+    }
+    static vector<bool> toBoolArray(string s) {
+        vector<string> arr = parseArray(s); vector<bool> res;
+        for(auto& x : arr) res.push_back(toBool(x)); return res;
+    }
+    static vector<char> toCharArray(string s) {
+        vector<string> arr = parseArray(s); vector<char> res;
+        for(auto& x : arr) res.push_back(stripQuotes(x)[0]); return res;
+    }
+    static vector<vector<char>> toChar2DArray(string s) {
+        vector<string> arr = parseArray(s); vector<vector<char>> res;
+        for(auto& x : arr) res.push_back(toCharArray(x)); return res;
+    }
+    static vector<vector<string>> toString2DArray(string s) {
+        vector<string> arr = parseArray(s); vector<vector<string>> res;
+        for(auto& x : arr) res.push_back(toStringArray(x)); return res;
+    }
     
     template<typename T>
     static string serialize(vector<T> arr) {
@@ -389,6 +428,16 @@ public:
         for(size_t i=0; i<arr.size(); i++) {
             if(i > 0) res += ",";
             res += serialize(arr[i]);
+        }
+        res += "]";
+        return res;
+    }
+    template<typename T>
+    static string serialize(vector<vector<T>> mat) {
+        string res = "[";
+        for(size_t i=0; i<mat.size(); i++) {
+            if(i > 0) res += ",";
+            res += serialize(mat[i]);
         }
         res += "]";
         return res;
@@ -435,12 +484,20 @@ int guess(int num) {
             reads += `    string raw_${i} = inputLines.size() > ${i} ? inputLines[${i}] : "";\n`;
             
             if(cppTypeMapped === 'int') reads += `    int p${i} = Helper::toInt(raw_${i});\n`;
+            else if(cppTypeMapped === 'long long') reads += `    long long p${i} = Helper::toLong(raw_${i});\n`;
             else if(cppTypeMapped === 'double') reads += `    double p${i} = Helper::toDouble(raw_${i});\n`;
             else if(cppTypeMapped === 'bool') reads += `    bool p${i} = Helper::toBool(raw_${i});\n`;
+            else if(cppTypeMapped === 'char') reads += `    char p${i} = Helper::stripQuotes(raw_${i})[0];\n`;
             else if(cppTypeMapped === 'string') reads += `    string p${i} = Helper::stripQuotes(raw_${i});\n`;
             else if(cppTypeMapped === 'vector<int>') reads += `    vector<int> p${i} = Helper::toIntArray(raw_${i});\n`;
-            else if(cppTypeMapped === 'vector<vector<int>>') reads += `    vector<vector<int>> p${i} = Helper::toInt2DArray(raw_${i});\n`;
+            else if(cppTypeMapped === 'vector<long long>') reads += `    vector<long long> p${i} = Helper::toLongArray(raw_${i});\n`;
+            else if(cppTypeMapped === 'vector<double>') reads += `    vector<double> p${i} = Helper::toDoubleArray(raw_${i});\n`;
+            else if(cppTypeMapped === 'vector<bool>') reads += `    vector<bool> p${i} = Helper::toBoolArray(raw_${i});\n`;
+            else if(cppTypeMapped === 'vector<char>') reads += `    vector<char> p${i} = Helper::toCharArray(raw_${i});\n`;
             else if(cppTypeMapped === 'vector<string>') reads += `    vector<string> p${i} = Helper::toStringArray(raw_${i});\n`;
+            else if(cppTypeMapped === 'vector<vector<int>>') reads += `    vector<vector<int>> p${i} = Helper::toInt2DArray(raw_${i});\n`;
+            else if(cppTypeMapped === 'vector<vector<char>>') reads += `    vector<vector<char>> p${i} = Helper::toChar2DArray(raw_${i});\n`;
+            else if(cppTypeMapped === 'vector<vector<string>>') reads += `    vector<vector<string>> p${i} = Helper::toString2DArray(raw_${i});\n`;
             else if(cppTypeMapped === 'ListNode*') reads += `    ListNode* p${i} = Helper::toLinkedList(raw_${i});\n`;
             else if(cppTypeMapped === 'vector<ListNode*>') reads += `    vector<ListNode*> p${i} = Helper::toLinkedListArray(raw_${i});\n`;
             else if(cppTypeMapped === 'TreeNode*') reads += `    TreeNode* p${i} = Helper::toBinaryTree(raw_${i});\n`;

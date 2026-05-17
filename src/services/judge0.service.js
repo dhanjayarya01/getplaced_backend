@@ -57,23 +57,27 @@ export const createSubmission = async (
             throw new Error(`Unsupported language: ${language}`)
         }
 
+        // Normalize expected output: remove spaces after commas/brackets so '[1, 2]' == '[1,2]'
+        const normalizeOutput = (str) => {
+            if (!str) return ''
+            return str.trim()
+                .replace(/,\s+/g, ',')
+                .replace(/\[\s+/g, '[')
+                .replace(/\s+]/g, ']')
+                .replace(/\{\s+/g, '{')
+                .replace(/\s+}/g, '}')
+        }
+        const normalizedExpected = normalizeOutput(expectedOutput)
         const submissionData = {
             source_code: Buffer.from(sourceCode).toString('base64'),
             language_id: languageId,
-            expected_output: Buffer.from(expectedOutput).toString('base64'),
+            expected_output: Buffer.from(normalizedExpected).toString('base64'),
             cpu_time_limit: timeLimit,
             memory_limit: memoryLimit,
         }
 
-        // JavaScript uses command-line arguments instead of stdin (Judge0 sandbox limitation)
-        if (language.toLowerCase() === 'javascript' || language.toLowerCase() === 'js') {
-            // Convert newline-separated input to space-separated arguments
-            // Example: "[2,7,11,15]\n9" becomes "[2,7,11,15] 9"
-            const argsString = stdin.split('\n').map(arg => `"${arg.replace(/"/g, '\\"')}"`).join(' ');
-            submissionData.command_line_arguments = argsString;
-        } else {
-            submissionData.stdin = Buffer.from(stdin).toString('base64'); // Other languages use stdin
-        }
+        // All languages use stdin now (our wrappers read from stdin directly)
+        submissionData.stdin = Buffer.from(stdin).toString('base64');
 
         // Add compiler options for C to link math library
         if (language.toLowerCase() === 'c') {
@@ -175,6 +179,17 @@ export const getSubmissionResult = async (token, maxRetries = 10, retryDelay = 1
  */
 export const runTestCases = async (sourceCode, language, testCases, timeLimit = 5, memoryLimit = 256000) => {
     try {
+        // Normalize helper for output comparison
+        const normalize = (str) => {
+            if (!str) return ''
+            return str.trim()
+                .replace(/,\s+/g, ',')
+                .replace(/\[\s+/g, '[')
+                .replace(/\s+]/g, ']')
+                .replace(/\{\s+/g, '{')
+                .replace(/\s+}/g, '}')
+        }
+
         // Create submissions for all test cases
         const submissionPromises = testCases.map((testCase) =>
             createSubmission(sourceCode, language, testCase.input, testCase.expectedOutput, timeLimit, memoryLimit)
@@ -189,18 +204,25 @@ export const runTestCases = async (sourceCode, language, testCases, timeLimit = 
         const resultPromises = tokens.map((token) => getSubmissionResult(token))
         const results = await Promise.all(resultPromises)
 
-        // Aggregate results
-        const testResults = results.map((result, index) => ({
-            testCaseId: testCases[index]._id || index,
-            input: testCases[index].input,
-            expectedOutput: testCases[index].expectedOutput,
-            actualOutput: result.stdout,
-            passed: result.accepted,
-            executionTime: result.time,
-            memory: result.memory,
-            error: result.stderr || result.compileOutput || result.message || null,
-            status: result.status,
-        }))
+        // Aggregate results with normalized comparison
+        const testResults = results.map((result, index) => {
+            // If Judge0 says accepted, trust it. If not, do our own normalized comparison.
+            let passed = result.accepted
+            if (!passed && result.stdout && testCases[index].expectedOutput) {
+                passed = normalize(result.stdout) === normalize(testCases[index].expectedOutput)
+            }
+            return {
+                testCaseId: testCases[index]._id || index,
+                input: testCases[index].input,
+                expectedOutput: testCases[index].expectedOutput,
+                actualOutput: result.stdout,
+                passed,
+                executionTime: result.time,
+                memory: result.memory,
+                error: result.stderr || result.compileOutput || result.message || null,
+                status: passed ? 'Accepted' : result.status,
+            }
+        })
 
         const passedCount = testResults.filter((r) => r.passed).length
         const allPassed = passedCount === testCases.length
