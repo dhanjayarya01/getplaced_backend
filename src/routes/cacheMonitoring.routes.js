@@ -10,6 +10,7 @@ import {
     deleteKey,
     deleteKeys,
     setKey,
+    getQueuesStatus
 } from '../controllers/cacheMonitoring.controller.js'
 import { authenticateUser, isAdmin } from '../middleware/auth.middleware.js'
 
@@ -20,6 +21,7 @@ router.get('/health', getCacheHealth)
 
 // ── Admin: stats & management ──────────────────────────────────────────────
 router.get('/stats',           authenticateUser, isAdmin, getCacheStats)
+router.get('/queues',          authenticateUser, isAdmin, getQueuesStatus)
 router.post('/stats/reset',    authenticateUser, isAdmin, resetCacheStats)
 router.post('/warm',           authenticateUser, isAdmin, warmCache)
 router.post('/clear',          authenticateUser, isAdmin, clearAllCache)

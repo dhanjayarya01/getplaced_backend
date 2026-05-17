@@ -2,8 +2,6 @@ import '../utils/canvas-polyfill.js'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-// Initialize Gemini client with API key
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || 'AIzaSyAfWUg1o9Df6Y5-pbTP6yFaigg8PzeYKu8')
 
 /**
  * Clean extracted text from PDF
@@ -128,6 +126,10 @@ ${cleanedText}
 Return ONLY the JSON object, nothing else.`
 
     try {
+        if (!process.env.GOOGLE_API_KEY) {
+            throw new Error("GOOGLE_API_KEY environment variable is not set");
+        }
+        const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY); // Re-initialized
         // Use Gemini 2.5 Flash model
         const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 

@@ -1,5 +1,6 @@
 import redis from '../config/redis.js'
 import { invalidateUserCache } from '../utils/cache.utils.js'
+import { Queue } from 'bullmq'
 
 let cacheMetrics = {
     hits: 0,
@@ -370,5 +371,40 @@ export const setKey = async (req, res) => {
         res.json({ success: true, message: `Set: ${key}${ttl ? ` (TTL: ${ttl}s)` : ''}` })
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error setting key', error: error.message })
+    }
+}
+
+/** GET /api/cache/queues — get stats and recent jobs for all platform queues */
+export const getQueuesStatus = async (req, res) => {
+    try {
+        const queueNames = ['code-execution', 'ml-evaluation', 'bulk-email']
+        const results = await Promise.all(queueNames.map(async (name) => {
+            const q = new Queue(name, { connection: redis })
+            const counts = await q.getJobCounts('wait', 'active', 'completed', 'failed', 'delayed')
+            const jobs = await q.getJobs(['wait', 'active', 'failed', 'delayed', 'completed'], 0, 10)
+            
+            const formattedJobs = await Promise.all(jobs.map(async j => ({
+                id: j.id,
+                name: j.name,
+                state: await j.getState(),
+                progress: j.progress,
+                failedReason: j.failedReason,
+                timestamp: j.timestamp,
+                data: j.data
+            })))
+            
+            await q.close()
+            
+            return {
+                name,
+                counts,
+                jobs: formattedJobs
+            }
+        }))
+        
+        res.json({ success: true, data: results })
+    } catch (error) {
+        console.error('Error fetching queues status:', error)
+        res.status(500).json({ success: false, message: 'Error fetching queues status', error: error.message })
     }
 }
