@@ -6,11 +6,14 @@ import {
     updateMockInterview,
     deleteMockInterview,
     toggleActiveStatus,
+    uploadMockInterviewImage,
+    uploadImageMiddleware,
 } from '../../controllers/admin/mockInterview.admin.controller.js'
 
 const router = express.Router()
 
 // CRUD routes
+router.post('/upload-image', uploadImageMiddleware, uploadMockInterviewImage)
 router.get('/', getAllMockInterviews)
 router.get('/:id', getMockInterviewById)
 router.post('/', createMockInterview)

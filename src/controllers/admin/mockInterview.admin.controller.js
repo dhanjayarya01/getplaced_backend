@@ -1,4 +1,63 @@
 import { MockInterview } from '../../models/index.js'
+import cloudinary from '../../config/cloudinary.js'
+import fs from 'fs'
+import multer from 'multer'
+
+const upload = multer({
+    dest: 'uploads/temp/',
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+    },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true)
+        } else {
+            cb(new Error('Only image files are allowed'))
+        }
+    },
+})
+
+export const uploadImageMiddleware = upload.single('image')
+
+export const uploadMockInterviewImage = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No image uploaded',
+            })
+        }
+
+        const filePath = req.file.path
+
+        const cloudinaryResult = await cloudinary.uploader.upload(filePath, {
+            folder: 'mock_interviews',
+        })
+
+        // Clean up temp file
+        fs.unlinkSync(filePath)
+
+        res.json({
+            success: true,
+            message: 'Image uploaded successfully',
+            imageUrl: cloudinaryResult.secure_url,
+        })
+    } catch (error) {
+        if (req.file?.path) {
+            try {
+                fs.unlinkSync(req.file.path)
+            } catch (unlinkError) {
+                console.error('Failed to delete temp file:', unlinkError)
+            }
+        }
+        console.error('Upload mock interview image error:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Failed to upload image',
+            error: error.message,
+        })
+    }
+}
 
 export const getAllMockInterviews = async (req, res) => {
     try {

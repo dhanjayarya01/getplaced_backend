@@ -14,6 +14,10 @@ const mockInterviewSchema = new mongoose.Schema(
             type: String, // emoji or icon name
             default: '🎤',
         },
+        image: {
+            type: String, // URL to cloudinary image
+            default: null,
+        },
         description: {
             type: String,
             required: true,
