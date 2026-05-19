@@ -130,8 +130,8 @@ Return ONLY the JSON object, nothing else.`
             throw new Error("GOOGLE_API_KEY environment variable is not set");
         }
         const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY); // Re-initialized
-        // Use Gemini 2.5 Flash model
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+        // Use Gemini Flash Latest model for better stability
+        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' })
 
         const result = await model.generateContent(prompt)
         const response = await result.response
