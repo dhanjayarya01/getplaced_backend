@@ -1,6 +1,4 @@
 import { DSAProblem, User, Submission } from '../models/index.js'
-import judge0Service from '../services/judge0.service.js'
-import codeWrapperService from '../services/codeWrapper.service.js'
 import { queueCodeExecution, getJobStatus } from '../queues/codeExecution.queue.js'
 import redis from '../config/redis.js'
 import { generateCacheKey, invalidateDSACache, invalidateUserCache } from '../utils/cache.utils.js'
@@ -99,7 +97,7 @@ export const getAllDSAProblems = async (req, res) => {
         const skip = (page - 1) * limit
 
         const problems = await DSAProblem.find(query)
-            .select('-testCases.input -testCases.output -solution -starterCode -metadata') // Don't send solution and hidden test cases
+            .select('-testCases -runners') // List view: no tests or server runners
             .populate('companies', 'name logo slug')
             .sort(sort)
             .skip(skip)
@@ -179,7 +177,7 @@ export const getDSAProblem = async (req, res) => {
             }
 
             problem = await DSAProblem.findOne(query)
-                .select('-solution') // Don't send solution initially
+                .select('-runners') // Server-only harness templates
                 .populate('companies', 'name slug')
 
             if (!problem) {
@@ -391,11 +389,6 @@ export const getDSAProblemForInterview = async (req, res) => {
     }
 }
 
-const wrapCode = (code, language, problem) => {
-
-    return codeWrapperService.wrapCode(problem, code, language);
-}
-
 export const runDSACode = async (req, res) => {
     try {
         const { id } = req.params
@@ -427,10 +420,13 @@ export const runDSACode = async (req, res) => {
         }
 
         const formatInput = (input) => {
-            if (!input) return '';
-
-            return input.split(/,(?![^\[]*\])/).map(s => s.trim()).join('\n');
-        };
+            if (!input) return ''
+            if (input.includes('\n')) return input.trim()
+            return input
+                .split(/,(?![^\[\{]*[\]\}])/)
+                .map((s) => s.trim())
+                .join('\n')
+        }
 
         // Get only VISIBLE test cases (first 3, non-hidden) for Run
         const visibleTestCases = problem.testCases
@@ -506,10 +502,13 @@ export const submitDSASolution = async (req, res) => {
             })
         }
 
-        // Format input for test cases
         const formatInput = (input) => {
             if (!input) return ''
-            return input.split(/,(?![^\[]*\])/).map(s => s.trim()).join('\n')
+            if (input.includes('\n')) return input.trim()
+            return input
+                .split(/,(?![^\[\{]*[\]\}])/)
+                .map((s) => s.trim())
+                .join('\n')
         }
 
         const formattedTestCases = problem.testCases.map(tc => ({

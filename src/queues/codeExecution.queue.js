@@ -22,15 +22,10 @@ export async function queueCodeExecution(problemId, code, language, testCases, u
             userId,
             problem: {
                 _id: problem._id,
-                slug: problem.slug, // CRITICAL: Needed for type inference!
+                slug: problem.slug,
                 title: problem.title,
-                difficulty: problem.difficulty,
                 timeLimit: problem.timeLimit,
                 memoryLimit: problem.memoryLimit,
-                functionName: problem.functionName,
-                parameters: problem.parameters,
-                returnType: problem.returnType,
-                testCases: problem.testCases, // Needed for code wrapping
             },
         },
         {
