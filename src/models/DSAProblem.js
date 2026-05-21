@@ -93,9 +93,10 @@ dsaProblemSchema.pre('findOneAndUpdate', function (next) {
     next()
 })
 
-dsaProblemSchema.index({ slug: 1 })
+// Note: slug and problemNumber indexes are auto-created by unique:true on the fields above
 dsaProblemSchema.index({ difficulty: 1 })
 dsaProblemSchema.index({ isActive: 1 })
+
 
 const DSAProblem = mongoose.model('DSAProblem', dsaProblemSchema)
 
